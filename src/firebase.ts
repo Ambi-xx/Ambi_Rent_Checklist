@@ -7,7 +7,7 @@ import { getFirestore } from 'firebase/firestore';
 import firebaseConfigLocal from '../firebase-applet-config.json';
 
 // In production (GitHub), these are injected from GitHub Secrets via vite.config.ts
-const firebaseConfig = {
+const envConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -17,13 +17,19 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
 };
 
-// Selection logic: If env vars exist and aren't "dummy", use them. Otherwise fallback to local.
-// Trigger build after GitHub Secrets and Firebase Domain authorization
-const isEnvValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== 'dummy' && !firebaseConfig.apiKey.includes('${{');
-const finalConfig = isEnvValid ? firebaseConfig : firebaseConfigLocal;
+// Selection logic: Prefer environment variables, fallback to local file if env is missing/dummy
+const isEnvValid = envConfig.apiKey && envConfig.apiKey !== 'dummy' && !envConfig.apiKey.includes('${{');
+
+// Merge: start with local config, then override with valid env vars
+const finalConfig = {
+  ...firebaseConfigLocal,
+  ...(isEnvValid ? Object.fromEntries(
+    Object.entries(envConfig).filter(([_, v]) => v !== undefined && v !== '' && !String(v).includes('${{'))
+  ) : {})
+};
 
 if (!isEnvValid && import.meta.env.PROD) {
-  console.error("🚨 [Firebase Config Error]: Project is running in production but GitHub Secrets were not found. Falling back to local/dummy config which will fail Auth.");
+  console.warn("🚨 [Firebase Config Warning]: API Key not found in environment. Using fallback local configuration.");
 }
 
 // Initialize Firebase SDK
