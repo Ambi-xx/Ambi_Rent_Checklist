@@ -24,25 +24,11 @@ Object.entries(envConfigRaw).forEach(([k, v]) => {
   }
 });
 
-const isEnvValid = !!envConfig.apiKey;
-
-// Merge configuration
+// Merge configuration: Environment variables take precedence over local settings
 const finalConfig = {
   ...firebaseConfigLocal,
   ...envConfig
 };
-
-// DIAGNOSTIC LOGS - These MUST appear in production console if the build is fresh
-if (import.meta.env.PROD) {
-  console.log("%c🛠 [Ambitious Build Diagnostic]", "color: white; background: #2563eb; padding: 4px 8px; border-radius: 4px;");
-  console.log(`📡 Config Source: ${isEnvValid ? 'GitHub Secrets (Injected)' : 'Local JSON (Fallback)'}`);
-  console.log(`📋 Project ID: ${finalConfig.projectId}`);
-  console.log(`🔑 Key Fragment: ...${finalConfig.apiKey?.slice(-6)}`);
-  
-  if (finalConfig.apiKey?.length && finalConfig.apiKey.length < 30) {
-    console.warn("⚠️ Warning: API Key looks suspiciously short. Check your GitHub Secrets.");
-  }
-}
 
 // Initialize Firebase SDK
 const app = initializeApp(finalConfig);
