@@ -6,7 +6,7 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    base: process.env.NODE_ENV === 'production' ? '/Checklist/' : '/', // GitHub Pages 仓库名 (生产环境用)
+    base: process.env.NODE_ENV === 'production' ? '/Ambi_Rent_Checklist/' : '/', // GitHub Pages 仓库名 (生产环境用)
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
