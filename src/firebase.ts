@@ -18,6 +18,7 @@ const firebaseConfig = {
 };
 
 // Selection logic: If env vars exist and aren't "dummy", use them. Otherwise fallback to local.
+// Trigger build after GitHub Secrets and Firebase Domain authorization
 const isEnvValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== 'dummy' && !firebaseConfig.apiKey.includes('${{');
 const finalConfig = isEnvValid ? firebaseConfig : firebaseConfigLocal;
 
