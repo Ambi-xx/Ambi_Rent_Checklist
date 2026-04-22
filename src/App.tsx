@@ -33,6 +33,38 @@ type Phase = {
   factors?: Factor[];
 };
 
+const HOKKAIDO_STATIONS: Record<string, string[]> = {
+  // 地下鉄
+  '南北線': ['麻生', '北３４条', '北２４条', '北１８条', '北１２条', 'さっぽろ', '大通', 'すすきの', '中島公園', '幌平橋', '中の島', '平岸', '南平岸', '澄川', '自衛隊前', '真駒内'],
+  '東西線': ['宮の沢', '発寒南', '琴似', '二十四軒', '西２８丁目', '円山公園', '西１８丁目', '西１１丁目', '大通', 'バスセンター前', '菊水', '東札幌', '白石', '南郷７丁目', '南郷１３丁目', '南郷１８丁目', '大谷地', 'ひばりが丘', '新さっぽろ'],
+  '東豊線': ['栄町', '新道東', '元町', '環状通東', '東区役所前', '北１３条東', 'さっぽろ', '大通', '豊水すすきの', '学園前', '豊平公園', '美園', '月寒中央', '福住'],
+  
+  // JR
+  '函館本線': ['函館', '五稜郭', '桔梗', '七飯', '大沼公園', '森', '八雲', '長万部', '倶知安', '余市', '小樽', '小樽築港', '銭函', '星置', '手稲', '発寒', '琴似', '桑園', '札幌', '苗穂', '白石', '大麻', '野幌', '江別', '岩見沢', '美唄', '砂川', '滝川', '深川', '旭川'],
+  '千歳線': ['札幌', '苗穂', '白石', '平和', '新札幌', '上野幌', '北広島', '島松', '恵み野', '恵庭', 'サッポロビール庭園', '長都', '千歳', '南千歳', '新千歳空港', '植苗', '沼ノ端', '苫小牧'],
+  '札沼線': ['札幌', '桑園', '八軒', '新川', '新琴似', '太平', '百合が原', '篠路', '拓北', 'あいの里教育大', 'あいの里公園', 'ロイズタウン', '太美', '当別', '北海道医療大学'],
+  '根室本線': ['滝川', '赤平', '芦別', '富良野', '幾寅', '新得', '十勝清水', '芽室', '西帯広', '帯広', '札内', '幕別', '利別', '池田', '浦幌', '厚内', '音別', '白糠', '大楽毛', '新富士', '釧路', '東釧路', '武佐', '別保', '厚岸', '茶内', '浜中', '厚床', '別当賀', '落石', '昆布盛', '西和田', '花咲', '東根室', '根室'],
+  '室蘭本線': ['長万部', '洞爺', '伊達紋別', '東室蘭', '室蘭', '登別', '白老', '苫小牧', '追分', '岩見沢'],
+  '石勝線': ['南千歳', '追分', '川端', '新夕張', '占冠', 'トマム', '新得'],
+  '富良野線': ['旭川', '神楽岡', '緑が丘', '西御料', '西聖和', '千代ヶ岡', '北美瑛', '美瑛', '美馬牛', '上富良野', '西中', '中富良野', 'ラベンダー畑', '鹿討', '学田', '富良野'],
+  '宗谷本線': ['旭川', '永山', '比布', '和寒', '剣淵', '士別', '多寄', '風連', '名寄', '美深', '音威子府', '天塩中川', '幌延', '豊富', '兜沼', '南稚内', '稚内'],
+  '石北本線': ['旭川', '東旭川', '当麻', '上川', '白滝', '丸瀬布', '遠軽', '生野', '安国', '生田原', '留辺蘂', '相内', '東相内', '西北見', '北見', '柏陽', '愛野', '端野', '緋牛内', '美幌', '女満別', '呼人', '網走'],
+  '釧網本線': ['網走', '藻琴', '北浜', '浜小清水', '止別', '知床斜里', '清里町', '緑', '川湯温泉', '摩周', '磯分内', '標茶', '茅沼', '塘路', '細岡', '遠矢', '東釧路', '釧路'],
+  '日高本線': ['苫小牧', '勇払', '浜厚真', '鵡川'],
+  '留萌本線': ['深川', '北一已', '秩父別', '北秩父別', '石狩沼田', '真布', '恵比島', '峠下', '幌糠', '藤山', '大和田', '留萌'],
+  
+  // 新幹線
+  '北海道新幹線': ['新青森', '奥津軽いまべつ', '木古内', '新函館北斗'],
+
+  // 市電・路面電車
+  '札幌市軌道線': ['西４丁目', '西８丁目', '中央区役所前', '西１１丁目', '資生館小学校前', 'すすきの', '狸小路', '静修学園前', '行啓通', '中島公園通', '山鼻９条', '東本願寺前'],
+  '函館市電本線湯川線': ['湯の川', '湯の川温泉', '函館アリーナ前', '駒場車庫前', '競馬場前', '深堀町', '柏木町', '杉並町', '五稜郭公園前', '中央病院前', '千代台', '堀川町', '昭和橋', '千歳町', '新川町', '松風町', '函館駅前', '市役所前', '魚市場通', '十字街'],
+  '函館市電宝来谷地頭線': ['十字街', '宝来町', '青柳町', '谷地頭'],
+
+  // その他
+  '道南いさりび鉄道': ['五稜郭', '七重浜', '久根別', '清川口', '上磯', '茂辺地', '渡島当別', '釜谷', 'サラキ岬', '泉沢', '札苅', '木古内']
+};
+
 const initialData: Phase[] = [
   {
     id: 'phase-1',
@@ -44,7 +76,7 @@ const initialData: Phase[] = [
       { id: 'f1-reason', title: '引っ越し理由', type: 'checkbox_group', value: [], options: ['入学', '就職', '転勤', '結婚', '別居', '短期入居', '独立', '契約満了', '現居改善', '家族増員', 'ペットを飼う', '通勤通学不便', '家賃を安く', '駐車場改善', '契約条件違反', 'その他'] },
       { id: 'f1-reason-other', title: 'その他の理由詳細', type: 'text', value: '', placeholder: '具体的な理由をご記入ください' },
       { id: 'f1-name', title: 'お客様氏名', type: 'text', value: '', placeholder: '氏名' },
-      { id: 'f1-kana', title: 'ふりがな', type: 'text', value: '', placeholder: 'ふりがな' },
+      { id: 'f1-kana', title: 'フリガナ', type: 'text', value: '', placeholder: 'フリガナ' },
       { id: 'f1-type', title: '個人/法人', type: 'select', value: '', options: ['個人', '法人'] },
       { id: 'f1-gender', title: '性別', type: 'select', value: '', options: ['男', '女'] },
       { id: 'f1-birth', title: '生年月日', type: 'date', value: '' },
@@ -53,29 +85,57 @@ const initialData: Phase[] = [
       { id: 'f1-email', title: 'メールアドレス', type: 'text', value: '', placeholder: 'example@email.com' },
       { id: 'f1-relation', title: '借主との関係', type: 'select', value: '', options: ['本人(借主)', '夫', '妻', '子供', '親', '兄弟', '親戚', '上司・同僚', '代理人', '友人', '社宅担当者', '社宅代行業者', '法人入居者', 'その他'] },
       { id: 'f1-relation-other', title: 'その他の関係詳細', type: 'text', value: '', placeholder: '具体的な関係をご記入ください' },
-      { id: 'f1-job', title: '職業について', type: 'select', value: '', options: ['学生', '正社員', 'アルバイト・パート', '契約社員・準社員', '役員・経営者', '無職', 'その他'] },
+      { id: 'f1-job', title: '職業について', type: 'select', value: '', options: ['学生（新入生）', '学生（在校生）', '正社員', 'アルバイト・パート', '契約社員・準社員', '役員・経営者', '無職', 'その他'] },
       { id: 'f1-job-other', title: 'その他の職業詳細', type: 'text', value: '', placeholder: '具体的な職業をご記入ください' },
       { id: 'f1-jobtype', title: '職業種別', type: 'select', value: '', options: ['会社員', '公務員', 'フリーター', '自営業', '求職', 'その他'] },
       { id: 'f1-jobtype-other', title: 'その他の職業種別詳細', type: 'text', value: '', placeholder: '具体的な職業種別をご記入ください' },
       { id: 'f1-company', title: '勤務先・学校名', type: 'text', value: '', placeholder: '名称' },
-      { id: 'f1-company-addr', title: '勤務先所在地・TEL', type: 'text', value: '', placeholder: '所在地 / TEL' },
-      { id: 'f1-income', title: '税込年収・勤続年数', type: 'text', value: '', placeholder: '例: 400万円 / 3年' },
-      { id: 'f1-occupants', title: '入居者構成', type: 'checkbox_group', value: [], options: ['1名', '2名以上', '同居(同棲)', '夫婦', '夫婦・子', '親・夫婦・子', '母・子', '高齢者', '身体障がい者'] },
+      { id: 'f1-company-addr', title: '勤務先所在地', type: 'text', value: '', placeholder: '所在地' },
+      { id: 'f1-company-tel', title: '勤務先電話番号', type: 'text', value: '', placeholder: '03-0000-0000' },
+      { id: 'f1-income', title: '税込年収', type: 'text', value: '', placeholder: '例: 400万円' },
+      { id: 'f1-tenure', title: '勤続年数', type: 'text', value: '', placeholder: '例: 3年' },
+      { id: 'f1-occupants-count', title: '入居人数', type: 'select', value: '', options: ['1名', '2名', 'その他'] },
+      { id: 'f1-occupants-count-other', title: '入居人数（その他）', type: 'text', value: '', placeholder: '人数を入力してください' },
+      { id: 'f1-occupants-type', title: '入居者構成・続柄', type: 'checkbox_group', value: [], options: ['学生（男）', '学生（女）', '独身（男）', '独身（女）', '単身赴任', '友人', '兄弟', '同居（同棲）', '夫婦', '夫婦・子', '親・夫婦・子', '母・子', '高齢者', '身体障がい者'] },
+      { id: 'f1-occupants-disability-detail', title: '身体障がいの詳細', type: 'textarea', value: '', placeholder: '詳細についてご記入ください' },
       { id: 'f1-guarantor', title: '保証人の予定', type: 'select', value: '', options: ['親', '兄弟', '子供', '親戚', '上司・同僚', '友達', '検討中', '保証人不要物件', 'その他'] },
       { id: 'f1-guarantor-other', title: 'その他の保証人詳細', type: 'text', value: '', placeholder: '具体的な保証人をご記入ください' },
       { id: 'f1-area', title: '希望区', type: 'checkbox_group', value: [], options: ['中央', '西', '手稲', '北', '東', '白石', '厚別', '豊平', '清田', '南', '近郊', 'その他'] },
       { id: 'f1-area-other', title: 'その他の希望区詳細', type: 'text', value: '', placeholder: '具体的な希望区をご記入ください' },
-      { id: 'f1-line', title: '希望沿線・駅・徒歩', type: 'text', value: '', placeholder: '例: 南北線 さっぽろ駅 徒歩10分以内' },
+      { id: 'f1-line-category', title: '希望沿線種別', type: 'checkbox_group', value: [], options: ['北海道新幹線', 'JR北海道', '札幌地下鉄', '市電・路面電車', '道南いさりび鉄道', 'バス・その他'] },
+      { id: 'f1-line-sub-jr', title: 'JR北海道 路線選択', type: 'checkbox_group', value: [], options: ['函館本線', '札沼線', '千歳線', '石勝線', '室蘭本線', '日高本線', '留萌本線', '根室本線', '富良野線', '宗谷本線', '石北本線', '釧網本線'] },
+      { id: 'f1-line-sub-subway', title: '札幌地下鉄 路線選択', type: 'checkbox_group', value: [], options: ['南北線', '東西線', '東豊線'] },
+      { id: 'f1-line-sub-tram', title: '市電・路面電車 路線選択', type: 'checkbox_group', value: [], options: ['札幌市軌道線', '函館市電本線湯川線', '函館市電宝来谷地頭線'] },
+      
+      // Dynamic Station Fields (Rendered conditionally)
+      ...Object.keys(HOKKAIDO_STATIONS).map(lineName => ({
+        id: `f1-line-stations-${lineName}`,
+        title: `${lineName} 駅選択`,
+        type: 'checkbox_group' as FactorType,
+        value: [],
+        options: HOKKAIDO_STATIONS[lineName]
+      })),
+
+      { id: 'f1-line-category-other', title: 'バス・その他の沿線詳細', type: 'text', value: '', placeholder: '具体的な沿線やエリアを入力してください' },
+      { id: 'f1-line-walk', title: '徒歩条件', type: 'select', value: '', options: ['指定なし', '3分以内', '5分以内', '7分以内', '10分以内', '15分以内', '20分以内'] },
       { id: 'f1-buildtype', title: '建物種類', type: 'checkbox_group', value: [], options: ['アパート', 'マンション', '分譲リース', '戸建', 'テラスハウス', '学生寮', 'ウィークリー型', 'その他'] },
       { id: 'f1-buildtype-other', title: 'その他の建物種類詳細', type: 'text', value: '', placeholder: '具体的な建物種類をご記入ください' },
       { id: 'f1-layout', title: '間取りタイプ', type: 'checkbox_group', value: [], options: ['1R・1K', '1LDK', '2LDK', '3LDK', '4LDK', '5LDK以上'] },
       { id: 'f1-rent', title: '希望家賃 (共益費・駐車代込)', type: 'text', value: '', placeholder: '上限 〇〇 万円まで' },
-      { id: 'f1-parking', title: '駐車場・車タイプ', type: 'text', value: '', placeholder: '例: 要1台 / 普通乗用' },
-      { id: 'f1-special', title: '特別条件', type: 'checkbox_group', value: [], options: ['犬', '猫', '楽器', '短期契約', '学校区', '対面K', 'エアコン', '2階以上', '都市ガス', '高層階', 'AL', 'テナント居抜き'] },
-      { id: 'f1-timing', title: '引越時期', type: 'text', value: '', placeholder: '例: 2024年4月上旬' },
+      { id: 'f1-parking-needed', title: '駐車場利用', type: 'select', value: '', options: ['不要', '要'] },
+      { id: 'f1-parking-count', title: '駐車台数', type: 'select', value: '', options: ['1台', '2台', '3台以上'] },
+      { id: 'f1-car-type', title: '車種タイプ', type: 'select', value: '', options: ['軽自動車', '普通車(5ナンバー)', '普通車(3ナンバー)', '大型/SUV', 'ハイルーフ', '外車', 'その他'] },
+      { id: 'f1-car-type-other', title: 'その他の車種詳細', type: 'text', value: '', placeholder: '具体的な車種を入力してください' },
+      { id: 'f1-bicycle-needed', title: '駐輪場利用 (自転車・バイク)', type: 'select', value: '', options: ['不要', '要'] },
+      { id: 'f1-bicycle-type', title: '駐輪タイプ', type: 'checkbox_group', value: [], options: ['自転車', '原付(50cc)', 'バイク(中型以上)'] },
+      { id: 'f1-special', title: '特別条件', type: 'checkbox_group', value: [], options: ['犬', '猫', '楽器', '短期契約', '学校区', '对面K', 'エアコン', '2阶以上', '都市ガス', '高层阶', 'AL', 'テナント居抜き'] },
+      { id: 'f1-pet-dog-detail', title: '犬の飼育詳細 (頭数・犬種)', type: 'text', value: '', placeholder: '例: 1頭 / トイプードル' },
+      { id: 'f1-pet-cat-detail', title: '猫の飼育詳細 (頭数・種類)', type: 'text', value: '', placeholder: '例: 2匹 / アメリカンショートヘア' },
+      { id: 'f1-timing', title: '引越時期', type: 'date', value: '', placeholder: '' },
       { id: 'f1-current', title: '現住居分類', type: 'select', value: '', options: ['賃貸', '持家', '社宅', '寮', '親元', '親戚宅', '友人宅', 'その他'] },
       { id: 'f1-current-other', title: 'その他の現住居分類詳細', type: 'text', value: '', placeholder: '具体的な現住居分類をご記入ください' },
-      { id: 'f1-current-rent', title: '現住居の家賃・間取り', type: 'text', value: '', placeholder: '例: 1LDK / 6万円' },
+      { id: 'f1-current-rent-amount', title: '現住居の家賃', type: 'text', value: '', placeholder: '例: 6.5万円' },
+      { id: 'f1-current-rent-layout', title: '現住居の間取り', type: 'select', value: '', options: ['1R・1K', '1LDK', '2DK', '2LDK', '3DK', '3LDK', '4LDK以上'] },
       { id: 'f1-current-good', title: '現住居の良い点', type: 'textarea', value: '', placeholder: '良い点をご記入ください' },
       { id: 'f1-current-bad', title: '現住居の不満な点', type: 'textarea', value: '', placeholder: '不満な点をご記入ください' },
     ],
@@ -146,13 +206,13 @@ const initialData: Phase[] = [
 
 const renderIcon = (iconName: string) => {
   switch (iconName) {
-    case 'user': return <User className="w-5 h-5" />;
-    case 'search': return <Search className="w-5 h-5" />;
-    case 'eye': return <Eye className="w-5 h-5" />;
-    case 'file-text': return <FileText className="w-5 h-5" />;
-    case 'pen-tool': return <PenTool className="w-5 h-5" />;
-    case 'key-round': return <KeyRound className="w-5 h-5" />;
-    default: return <ClipboardList className="w-5 h-5" />;
+    case 'user': return <User className="w-6 h-6" />;
+    case 'search': return <Search className="w-6 h-6" />;
+    case 'eye': return <Eye className="w-6 h-6" />;
+    case 'file-text': return <FileText className="w-6 h-6" />;
+    case 'pen-tool': return <PenTool className="w-6 h-6" />;
+    case 'key-round': return <KeyRound className="w-6 h-6" />;
+    default: return <ClipboardList className="w-6 h-6" />;
   }
 };
 
@@ -270,7 +330,7 @@ const FactorInput = ({ factor, phaseId, handleFactorChange }: { factor: Factor, 
       <CompositionTextarea 
         value={factor.value || ''} 
         onChange={(val) => handleFactorChange(phaseId, factor.id, val)} 
-        className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow resize-y min-h-[80px]" 
+        className="w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 resize-y min-h-[100px]" 
         placeholder={factor.placeholder} 
       />
     );
@@ -281,7 +341,7 @@ const FactorInput = ({ factor, phaseId, handleFactorChange }: { factor: Factor, 
       type="text" 
       value={factor.value || ''} 
       onChange={(val) => handleFactorChange(phaseId, factor.id, val)} 
-      className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" 
+      className="w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30" 
       placeholder={factor.placeholder} 
     />
   );
@@ -856,18 +916,18 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
-          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Users className="w-8 h-8" />
+      <div className="min-h-screen flex items-center justify-center bg-luxury-paper px-4 font-serif">
+        <div className="max-w-md w-full bg-white/50 backdrop-blur-sm rounded-none border border-luxury-border p-12 text-center shadow-2xl">
+          <div className="w-20 h-20 bg-prestige-gold/10 text-prestige-gold rounded-full flex items-center justify-center mx-auto mb-8">
+            <Users className="w-10 h-10" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 mb-2">チーム共有版</h1>
-          <p className="text-slate-500 mb-8">チームメンバーとリアルタイムで進捗を共有・管理できます。</p>
+          <h1 className="text-3xl font-medium tracking-widest text-luxury-ink mb-3 uppercase font-display">AMBITIOUS CRM</h1>
+          <p className="text-luxury-sage font-medium italic mb-10">賃貸業務管理システム</p>
           <button
             onClick={signInWithGoogle}
-            className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors"
+            className="w-full flex items-center justify-center space-x-3 bg-luxury-ink hover:bg-prestige-gold text-white px-6 py-4 rounded-none font-display text-sm tracking-widest uppercase transition-all duration-500 group"
           >
-            <LogIn className="w-5 h-5" />
+            <LogIn className="w-5 h-5 group-hover:rotate-12 transition-transform" />
             <span>Googleでログイン</span>
           </button>
         </div>
@@ -882,46 +942,49 @@ export default function App() {
   const progressPercentage = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex overflow-hidden">
+    <div className="min-h-screen bg-luxury-paper text-luxury-ink font-sans flex overflow-hidden">
       {/* Modal Overlay */}
       <AnimatePresence>
         {modalConfig.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-luxury-ink/60 backdrop-blur-md p-4">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden"
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="bg-white/95 border border-prestige-gold max-w-lg w-full overflow-hidden shadow-2xl"
             >
-              <div className="p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-2">{modalConfig.title}</h3>
-                <p className="text-slate-600 mb-6 whitespace-pre-wrap">{modalConfig.message}</p>
+              <div className="p-10 text-center">
+                <h3 className="text-xl font-display font-bold tracking-widest text-luxury-ink mb-4 uppercase">{modalConfig.title}</h3>
+                <p className="text-base font-serif italic text-luxury-sage mb-10 whitespace-pre-wrap leading-relaxed">{modalConfig.message}</p>
                 
                 {modalConfig.type === 'prompt' && (
-                  <CompositionInput 
-                    type="text" 
-                    autoFocus
-                    value={modalConfig.inputValue}
-                    onChange={(val) => setModalConfig(prev => ({ ...prev, inputValue: val }))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="トークンを入力..."
-                  />
+                  <div className="mb-10 px-8">
+                    <CompositionInput 
+                      type="password" 
+                      autoFocus
+                      value={modalConfig.inputValue}
+                      onChange={(val) => setModalConfig(prev => ({ ...prev, inputValue: val }))}
+                      className="w-full bg-transparent border-b border-luxury-border px-0 py-3 text-center text-sm tracking-[0.3em] font-display focus:border-prestige-gold transition-all outline-none"
+                      placeholder="トークンを入力してください..."
+                    />
+                  </div>
                 )}
 
-                <div className="flex justify-end space-x-3">
+                <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-6">
                   {modalConfig.type !== 'alert' && (
                     <button 
                       onClick={modalConfig.onCancel}
-                      className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                      className="px-8 py-3 text-xs font-display font-bold tracking-[0.2em] text-luxury-sage hover:text-luxury-ink uppercase transition-colors"
                     >
                       キャンセル
                     </button>
                   )}
                   <button 
                     onClick={() => modalConfig.onConfirm?.(modalConfig.inputValue)}
-                    className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md transition-colors"
+                    className="px-12 py-3 bg-luxury-ink text-white text-xs font-display font-bold tracking-[0.2em] uppercase hover:bg-prestige-gold transition-all duration-500 shadow-xl"
                   >
-                    OK
+                    確認
                   </button>
                 </div>
               </div>
@@ -939,56 +1002,56 @@ export default function App() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 flex flex-col h-screen transform transition-transform duration-300 ease-in-out md:relative ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'md:translate-x-0 md:w-64' : 'md:-translate-x-full md:w-0 md:border-none overflow-hidden'}`}>
-        <div className="p-4 border-b border-slate-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <div className="bg-blue-600 p-1.5 rounded text-white">
-                <ClipboardList className="w-5 h-5" />
+      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-luxury-border flex flex-col h-screen transform transition-all duration-500 ease-in-out md:relative ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'md:translate-x-0 md:w-72' : 'md:-translate-x-full md:w-0 md:border-none overflow-hidden'}`}>
+        <div className="p-6 border-b border-luxury-border">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-3">
+              <div className="bg-luxury-ink p-2 rounded-sm text-prestige-gold">
+                <ClipboardList className="w-6 h-6" />
               </div>
-              <h1 className="font-bold text-slate-800">賃貸契約管理</h1>
+              <h1 className="font-display font-semibold tracking-wider text-luxury-ink uppercase text-sm">Ambitious CRM</h1>
             </div>
             <button 
-              className="md:hidden p-1 text-slate-500 hover:bg-slate-100 rounded"
+              className="md:hidden p-1 text-luxury-sage hover:bg-luxury-paper rounded"
               onClick={() => setIsSidebarOpen(false)}
             >
               <X className="w-5 h-5" />
             </button>
           </div>
           
-          <form onSubmit={handleAddCustomer} className="flex space-x-2">
+          <form onSubmit={handleAddCustomer} className="flex relative">
             <CompositionInput
               type="text"
               value={newCustomerName}
               onChange={(val) => setNewCustomerName(val)}
-              placeholder="新規お客様名"
-              className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="新規案件を追加"
+              className="w-full pl-0 pr-10 py-2 text-sm border-b border-luxury-border focus:border-prestige-gold bg-transparent focus:outline-none placeholder:italic placeholder:text-luxury-sage/40 transition-all"
             />
             <button
               type="submit"
               disabled={!newCustomerName.trim()}
-              className="p-1.5 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-2 text-luxury-sage hover:text-prestige-gold disabled:opacity-30 transition-colors"
             >
               <Plus className="w-5 h-5" />
             </button>
           </form>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {categories.map(category => {
             const items = groupedChecklists[category] || [];
             
             return (
-              <div key={category} className="space-y-1">
+              <div key={category} className="space-y-2">
                 <button 
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-display font-medium tracking-[0.2em] text-prestige-gold uppercase hover:opacity-80 transition-opacity"
                 >
-                  <div className="flex items-center space-x-1.5">
-                    <Folder className="w-3.5 h-3.5" />
-                    <span>{category}</span>
+                  <div className="flex items-center space-x-2">
+                    <Folder className="w-3 h-3" />
+                    <span>{category.slice(3)}</span>
                   </div>
-                  {expandedCategories[category] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  {expandedCategories[category] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
                 
                 <AnimatePresence initial={false}>
@@ -997,31 +1060,31 @@ export default function App() {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden space-y-0.5"
+                      className="overflow-hidden space-y-1"
                     >
                       {items.map(checklist => (
                         <div
                           key={checklist.id}
-                          className={`group flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-colors ml-2 ${
-                            selectedId === checklist.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                          className={`group flex items-center justify-between px-3 py-2.5 rounded-none cursor-pointer transition-all duration-300 ml-2 border-l-2 ${
+                            selectedId === checklist.id 
+                              ? 'bg-luxury-paper border-prestige-gold text-luxury-ink shadow-sm' 
+                              : 'border-transparent hover:border-luxury-border text-luxury-sage hover:text-luxury-ink'
                           }`}
                           onClick={() => {
                             setSelectedId(checklist.id);
                             setIsSidebarOpen(false);
                           }}
                         >
-                          <div className="flex items-center space-x-2 truncate">
-                            <User className="w-4 h-4 flex-shrink-0" />
-                            <span className="text-sm font-medium truncate">{checklist.customerName}</span>
+                          <div className="flex items-center space-x-3 truncate">
+                            <span className="text-xs font-medium tracking-wide truncate uppercase font-display">{checklist.customerName} 様</span>
                           </div>
-                          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity space-x-1">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleArchiveCustomer(checklist.id, checklist.customerName, checklist.status);
                               }}
-                              className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
-                              title={checklist.status === 'archived' ? '復元' : 'アーカイブ'}
+                              className="p-1 text-luxury-sage hover:text-prestige-gold"
                             >
                               <Archive className="w-3.5 h-3.5" />
                             </button>
@@ -1030,8 +1093,7 @@ export default function App() {
                                 e.stopPropagation();
                                 handleDeleteCustomer(checklist.id, checklist.customerName);
                               }}
-                              className="p-1 text-slate-400 hover:text-red-500 transition-colors"
-                              title="削除"
+                              className="p-1 text-luxury-sage hover:text-red-500"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1039,8 +1101,8 @@ export default function App() {
                         </div>
                       ))}
                       {items.length === 0 && (
-                        <div className="px-5 py-2 text-xs text-slate-400 italic">
-                          案件がありません
+                        <div className="px-5 py-2 text-xs font-display text-luxury-sage/40 italic uppercase tracking-widest">
+                          記録なし
                         </div>
                       )}
                     </motion.div>
@@ -1051,15 +1113,21 @@ export default function App() {
           })}
         </div>
 
-        <div className="p-4 border-t border-slate-200">
+        <div className="p-6 border-t border-luxury-border bg-white/50 backdrop-blur-sm">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 truncate">
-              <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
-              <span className="text-sm font-medium truncate">{user.displayName}</span>
+            <div className="flex items-center space-x-3 truncate">
+              <div className="relative">
+                <img src={user.photoURL || ''} alt="" className="w-10 h-10 rounded-none border border-luxury-border grayscale hover:grayscale-0 transition-all duration-500" />
+                <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-prestige-gold border-2 border-white rounded-full" />
+              </div>
+              <div className="flex flex-col truncate">
+                <span className="text-xs font-display font-semibold tracking-wider text-luxury-ink truncate uppercase">{user.displayName}</span>
+                <span className="text-xs font-display text-luxury-sage tracking-widest uppercase">担当コンサルタント</span>
+              </div>
             </div>
             <button
               onClick={logOut}
-              className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+              className="p-2 text-luxury-sage hover:text-luxury-ink hover:bg-luxury-paper transition-all duration-300"
               title="ログアウト"
             >
               <LogOut className="w-4 h-4" />
@@ -1072,51 +1140,54 @@ export default function App() {
       <main className="flex-1 flex flex-col h-screen overflow-y-auto relative">
         {selectedChecklist ? (
           <>
-            <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm px-4 sm:px-8 py-4 sm:py-6">
-              <div className="flex flex-col gap-3 sm:gap-4">
+            <header className="bg-white/80 backdrop-blur-md border-b border-luxury-border sticky top-0 z-20 px-8 py-8 sm:py-10">
+              <div className="flex flex-col gap-8">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-6 min-w-0">
                     <button 
                       onClick={() => setIsSidebarOpen(true)}
-                      className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-md flex-shrink-0"
+                      className="md:hidden p-2 -ml-2 text-luxury-sage hover:bg-luxury-paper rounded-none"
                     >
                       <Menu className="w-6 h-6" />
                     </button>
                     <button 
                       onClick={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
-                      className="hidden md:block p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-md flex-shrink-0"
+                      className="hidden md:block p-2 -ml-2 text-luxury-sage hover:bg-luxury-paper rounded-none"
                     >
                       <Menu className="w-6 h-6" />
                     </button>
                     <div className="min-w-0">
-                      <h2 className="text-lg sm:text-2xl font-bold text-slate-800 truncate">{selectedChecklist.customerName}様</h2>
-                      <p className="text-xs sm:text-sm text-slate-500 mt-0.5">リアルタイム同期中</p>
+                      <h2 className="text-2xl sm:text-4xl font-normal font-serif text-luxury-ink tracking-tight truncate">{selectedChecklist.customerName} 様</h2>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="w-2 h-2 bg-prestige-gold rounded-full" />
+                        <p className="text-xs font-display font-bold tracking-[0.2em] text-luxury-sage uppercase">同期済み</p>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-2 flex-shrink-0">
+                  <div className="flex items-center space-x-3 flex-shrink-0">
                     <button 
                       onClick={downloadExcel}
-                      className="flex items-center justify-center text-sm bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-md shadow-sm"
+                      className="flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase bg-transparent border border-luxury-border text-luxury-ink hover:bg-luxury-ink hover:text-white transition-all duration-500 px-4 py-2"
                       title="Excelとしてダウンロード"
                     >
-                      <FileSpreadsheet className="w-4 h-4" />
-                      <span className="hidden sm:inline sm:ml-1.5">Excel出力</span>
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />
+                      <span className="hidden sm:inline">Excel出力</span>
                     </button>
                     
                     <button 
                       onClick={uploadToDropbox}
                       disabled={isUploading}
-                      className="flex items-center justify-center text-sm bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-md shadow-sm disabled:opacity-50"
+                      className="flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold hover:bg-prestige-gold hover:text-white transition-all duration-500 px-4 py-2 disabled:opacity-30"
                       title="Dropboxへ直接保存"
                     >
-                      <CloudUpload className="w-4 h-4" />
-                      <span className="hidden sm:inline sm:ml-1.5">{isUploading ? '保存中...' : 'Dropbox保存'}</span>
+                      <CloudUpload className="w-4 h-4 mr-2" />
+                      <span className="hidden sm:inline">{isUploading ? '処理中...' : 'Dropbox保存'}</span>
                     </button>
 
                     <button 
                       onClick={resetProgress}
-                      className="flex items-center justify-center text-sm text-slate-500 hover:text-red-600 transition-colors w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-md hover:bg-red-50"
+                      className="p-2 text-luxury-sage hover:text-red-600 transition-colors"
                       title="進捗リセット"
                     >
                       <RefreshCw className="w-4 h-4" />
@@ -1124,13 +1195,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="mt-6 sm:mt-10 mb-4 sm:mb-8 px-2 sm:px-8">
-                  <div className="relative flex justify-between items-center w-full">
+                <div className="px-2 sm:px-12">
+                  <div className="relative flex justify-between items-center w-full max-w-[1400px] mx-auto">
                     {/* Background Line */}
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 sm:h-1.5 bg-slate-200 rounded-full" />
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-[1px] bg-luxury-border" />
                     {/* Active Line */}
                     <div 
-                      className="absolute left-0 top-1/2 -translate-y-1/2 h-1 sm:h-1.5 bg-green-500 rounded-full transition-all duration-500 ease-out" 
+                      className="absolute left-0 top-1/2 -translate-y-1/2 h-[1px] bg-prestige-gold transition-all duration-1000 ease-in-out" 
                       style={{ width: `${Math.min(100, (selectedChecklist.phases.filter((p: Phase) => p.tasks.length > 0 && p.tasks.every(t => t.completed)).length / (selectedChecklist.phases.length - 1)) * 100)}%` }} 
                     />
                     
@@ -1153,16 +1224,16 @@ export default function App() {
                             }
                           }}
                         >
-                          <div className={`w-6 h-6 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 sm:border-4 transition-colors duration-300 group-hover:scale-110 ${
+                          <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center border transition-all duration-500 group-hover:scale-110 ${
                             isComplete 
-                              ? 'bg-green-500 border-green-100 text-white' 
+                              ? 'bg-prestige-gold border-prestige-gold text-white shadow-lg shadow-prestige-gold/20' 
                               : isCurrent 
-                                ? 'bg-blue-600 border-blue-100 text-white shadow-md shadow-blue-200' 
-                                : 'bg-white border-slate-200 text-slate-400'
+                                ? 'bg-luxury-ink border-luxury-ink text-white shadow-xl shadow-luxury-ink/30' 
+                                : 'bg-white border-luxury-border text-luxury-sage'
                           }`}>
-                            {isComplete ? <CheckCircle2 className="w-3 h-3 sm:w-5 sm:h-5" /> : <span className="text-[10px] sm:text-base font-bold">{index + 1}</span>}
+                            {isComplete ? <CheckCircle2 className="w-4 h-4 sm:w-6 sm:h-6" /> : <span className="text-xs sm:text-sm font-display font-bold leading-none">{index + 1}</span>}
                           </div>
-                          <span className={`hidden md:block absolute top-12 text-xs font-medium whitespace-nowrap mt-1 ${isComplete ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-slate-400'}`}>
+                          <span className={`hidden md:block absolute top-14 text-[10px] sm:text-[11px] font-display font-medium tracking-[0.2em] whitespace-nowrap uppercase transition-colors duration-500 ${isComplete ? 'text-prestige-gold' : isCurrent ? 'text-luxury-ink' : 'text-luxury-sage/60'}`}>
                             {phase.title.split('.')[1]?.trim() || phase.title}
                           </span>
                         </div>
@@ -1173,7 +1244,7 @@ export default function App() {
               </div>
             </header>
 
-            <div className="p-4 sm:p-8 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
+            <div className="p-8 sm:p-12 max-w-[1400px] mx-auto w-full space-y-8 sm:space-y-12">
               {selectedChecklist.phases.map((phase: Phase) => {
                 const phaseCompletedTasks = phase.tasks.filter(t => t.completed).length;
                 const phaseTotalTasks = phase.tasks.length;
@@ -1181,44 +1252,44 @@ export default function App() {
                 const isExpanded = expandedPhases[phase.id];
 
                 return (
-                  <div 
+                   <div 
                     key={phase.id} 
                     id={phase.id}
-                    className={`bg-white rounded-xl shadow-sm border overflow-hidden transition-colors duration-300 scroll-mt-24 ${
-                      isPhaseComplete ? 'border-green-200 bg-green-50/30' : 'border-slate-200'
+                    className={`bg-white/40 backdrop-blur-sm rounded-none border transition-all duration-700 scroll-mt-32 ${
+                      isPhaseComplete ? 'border-prestige-gold/30 bg-prestige-gold/[0.02]' : 'border-luxury-border'
                     }`}
                   >
                     <button 
                       onClick={() => togglePhase(phase.id)}
-                      className="w-full px-4 py-3 sm:px-5 sm:py-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
+                      className="w-full px-6 py-5 sm:px-8 sm:py-6 flex items-center justify-between hover:bg-luxury-paper/50 transition-colors text-left group"
                     >
-                      <div className="flex items-center space-x-3 flex-1 min-w-0">
-                        <div className={`p-2 rounded-lg flex-shrink-0 ${isPhaseComplete ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <div className="flex items-center space-x-5 flex-1 min-w-0">
+                        <div className={`p-3 rounded-none flex-shrink-0 transition-colors duration-500 ${isPhaseComplete ? 'bg-prestige-gold text-white' : 'bg-luxury-ink text-prestige-gold'}`}>
                           {renderIcon(phase.iconName)}
                         </div>
-                        <div className="flex-1 min-w-0 pr-2 sm:pr-4">
-                          <h2 className="text-base sm:text-lg font-bold text-slate-800 truncate">{phase.title}</h2>
-                          <div className="mt-1.5 sm:mt-2 flex items-center gap-2 sm:gap-3">
-                            <div className="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <h2 className="text-lg sm:text-xl font-normal font-serif text-luxury-ink tracking-tight truncate group-hover:text-prestige-gold transition-colors uppercase">{phase.title}</h2>
+                          <div className="mt-3 flex items-center gap-4">
+                            <div className="flex-1 bg-luxury-border rounded-none h-[1px] overflow-hidden">
                               <div 
-                                className={`h-full rounded-full transition-all duration-500 ${isPhaseComplete ? 'bg-green-500' : 'bg-blue-500'}`} 
+                                className={`h-full transition-all duration-1000 ${isPhaseComplete ? 'bg-prestige-gold' : 'bg-luxury-sage'}`} 
                                 style={{ width: `${phaseTotalTasks > 0 ? (phaseCompletedTasks / phaseTotalTasks) * 100 : 0}%` }} 
                               />
                             </div>
-                            <span className="text-[10px] sm:text-xs font-medium text-slate-500 whitespace-nowrap">
+                            <span className="text-xs font-display font-black tracking-widest text-luxury-sage uppercase whitespace-nowrap">
                               {phaseCompletedTasks} / {phaseTotalTasks}
                             </span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2 sm:space-x-4">
+                      <div className="flex items-center space-x-6">
                         {isPhaseComplete && (
-                          <span className="text-[10px] sm:text-xs font-medium bg-green-100 text-green-700 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full">
+                          <span className="text-xs font-display font-black tracking-widest bg-prestige-gold text-white px-3 py-1.5 uppercase shadow-sm">
                             完了
                           </span>
                         )}
-                        <div className="text-slate-400">
-                          {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        <div className="text-luxury-sage transition-transform duration-500" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                          <ChevronDown className="w-6 h-6" />
                         </div>
                       </div>
                     </button>
@@ -1235,39 +1306,41 @@ export default function App() {
                           <div className="border-t border-slate-100 px-3 py-3 sm:px-4 sm:py-4 bg-slate-50/50">
                             
                             {/* Tasks Section */}
-                            <div className="mb-4 sm:mb-6">
-                              <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center">
-                                <CheckSquare className="w-4 h-4 mr-1.5 text-slate-500"/>
+                            <div className="mb-10 sm:mb-16">
+                              <h4 className="text-xs sm:text-sm font-display font-black tracking-[0.3em] text-prestige-gold mb-6 flex items-center uppercase">
+                                <CheckSquare className="w-4 h-4 mr-3"/>
                                 基本タスク
                               </h4>
-                              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                              <div className="bg-white/50 border border-luxury-border shadow-sm overflow-hidden">
                                 {phase.tasks.map((task, index) => (
                                   <div 
                                     key={task.id}
                                     onClick={() => toggleTask(phase.id, task.id)}
-                                    className={`group flex items-start space-x-3 sm:space-x-4 p-3 sm:p-4 cursor-pointer transition-all duration-200 ${
-                                      index !== phase.tasks.length - 1 ? 'border-b border-slate-100' : ''
+                                    className={`group flex items-start space-x-6 p-6 sm:p-8 cursor-pointer transition-all duration-300 ${
+                                      index !== phase.tasks.length - 1 ? 'border-b border-luxury-border' : ''
                                     } ${
                                       task.completed 
-                                        ? 'bg-slate-50 hover:bg-slate-100' 
-                                        : 'hover:bg-blue-50/50'
+                                        ? 'bg-luxury-paper/30' 
+                                        : 'hover:bg-white transition-colors'
                                     }`}
                                   >
-                                    <div className="flex-shrink-0 mt-0.5">
+                                    <div className="flex-shrink-0 mt-1">
                                       {task.completed ? (
                                         <motion.div
-                                          initial={{ scale: 0.8 }}
-                                          animate={{ scale: 1 }}
+                                          initial={{ scale: 0.8, opacity: 0 }}
+                                          animate={{ scale: 1, opacity: 1 }}
                                           transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
-                                          <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
+                                          <CheckCircle2 className="w-6 h-6 text-prestige-gold" />
                                         </motion.div>
                                       ) : (
-                                        <Circle className="w-5 h-5 sm:w-6 sm:h-6 text-slate-300 group-hover:text-blue-400 transition-colors" />
+                                        <div className="w-6 h-6 border border-luxury-border group-hover:border-prestige-gold transition-colors flex items-center justify-center">
+                                          <div className="w-1.5 h-1.5 bg-prestige-gold scale-0 group-hover:scale-100 transition-transform duration-500" />
+                                        </div>
                                       )}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <h5 className={`text-sm sm:text-base font-bold mb-1 transition-colors ${task.completed ? 'text-slate-500 line-through' : 'text-slate-700 group-hover:text-blue-700'}`}>
+                                      <h5 className={`text-base sm:text-xl font-serif tracking-tight mb-2 transition-all duration-500 ${task.completed ? 'text-luxury-sage/40 font-medium italic' : 'text-luxury-ink font-normal'}`}>
                                         {task.title}
                                       </h5>
                                       {task.id === 't2-2' ? (
@@ -1731,36 +1804,85 @@ export default function App() {
 
                             {/* Factors Section */}
                             {phase.factors && phase.factors.length > 0 && (
-                              <div className="bg-white p-4 sm:p-5 rounded-lg border border-slate-200 shadow-sm">
+                              <div className="bg-white/50 p-8 sm:p-10 border border-luxury-border">
                                 {phase.id === 'phase-1' && (
-                                  <div className="flex justify-end mb-4">
+                                  <div className="flex justify-end mb-8">
                                     <button
                                       onClick={downloadHearingSheet}
-                                      className="flex items-center space-x-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded transition-colors border border-blue-200"
+                                      className="flex items-center space-x-2 text-xs font-display font-bold tracking-widest uppercase bg-transparent text-luxury-ink hover:text-prestige-gold transition-colors"
                                     >
-                                      <Download className="w-3.5 h-3.5" />
-                                      <span>シート出力</span>
+                                      <Download className="w-4 h-4" />
+                                      <span>ヒアリングシート出力</span>
                                     </button>
                                   </div>
                                 )}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-10">
                                   {phase.factors.map(factor => {
-                                    // Conditional rendering for -other fields
-                                    if (factor.id.endsWith('-other')) {
-                                      const parentId = factor.id.replace('-other', '');
-                                      const parentFactor = phase.factors?.find(f => f.id === parentId);
-                                      if (!parentFactor) return null;
-                                      
-                                      const isOtherSelected = 
-                                        (Array.isArray(parentFactor.value) && parentFactor.value.includes('その他')) ||
-                                        (parentFactor.value === 'その他');
+                                    // Conditional rendering for specific fields
+                                    if (factor.id.endsWith('-other') || 
+                                        factor.id === 'f1-occupants-disability-detail' || 
+                                        factor.id === 'f1-parking-count' ||
+                                        factor.id === 'f1-car-type' ||
+                                        factor.id === 'f1-bicycle-type' ||
+                                        factor.id === 'f1-pet-dog-detail' ||
+                                        factor.id === 'f1-pet-cat-detail' ||
+                                        factor.id.startsWith('f1-line-sub-') || 
+                                        factor.id.startsWith('f1-line-stations-')) {
+                                      let isVisible = false;
+
+                                      if (factor.id.endsWith('-other')) {
+                                        const parentId = factor.id.replace('-other', '');
+                                        const parentFactor = phase.factors?.find(f => f.id === parentId);
+                                        if (parentFactor) {
+                                          isVisible = (Array.isArray(parentFactor.value) && parentFactor.value.includes('その他')) || (parentFactor.value === 'その他');
+                                        }
+                                      } else if (factor.id === 'f1-occupants-disability-detail') {
+                                        const typeFactor = phase.factors?.find(f => f.id === 'f1-occupants-type');
+                                        isVisible = Array.isArray(typeFactor?.value) && typeFactor.value.includes('身体障がい者');
+                                      } else if (factor.id === 'f1-parking-count' || factor.id === 'f1-car-type') {
+                                        const parkingFactor = phase.factors?.find(f => f.id === 'f1-parking-needed');
+                                        isVisible = parkingFactor?.value === '要';
+                                      } else if (factor.id === 'f1-bicycle-type') {
+                                        const bicycleFactor = phase.factors?.find(f => f.id === 'f1-bicycle-needed');
+                                        isVisible = bicycleFactor?.value === '要';
+                                      } else if (factor.id === 'f1-pet-dog-detail' || factor.id === 'f1-pet-cat-detail') {
+                                        const specialFactor = phase.factors?.find(f => f.id === 'f1-special');
+                                        const target = factor.id === 'f1-pet-dog-detail' ? '犬' : '猫';
+                                        isVisible = Array.isArray(specialFactor?.value) && specialFactor.value.includes(target);
+                                      } else if (factor.id === 'f1-line-sub-jr') {
+                                        const catFactor = phase.factors?.find(f => f.id === 'f1-line-category');
+                                        isVisible = Array.isArray(catFactor?.value) && catFactor.value.includes('JR北海道');
+                                      } else if (factor.id === 'f1-line-sub-subway') {
+                                        const catFactor = phase.factors?.find(f => f.id === 'f1-line-category');
+                                        isVisible = Array.isArray(catFactor?.value) && catFactor.value.includes('札幌地下鉄');
+                                      } else if (factor.id === 'f1-line-sub-tram') {
+                                        const catFactor = phase.factors?.find(f => f.id === 'f1-line-category');
+                                        isVisible = Array.isArray(catFactor?.value) && catFactor.value.includes('市電・路面電車');
+                                      } else if (factor.id.startsWith('f1-line-stations-')) {
+                                        const lineName = factor.id.replace('f1-line-stations-', '');
                                         
-                                      if (!isOtherSelected) return null;
+                                        // Case 1: Shinkansen / Isaribi (Directly from category)
+                                        const catFactor = phase.factors?.find(f => f.id === 'f1-line-category');
+                                        const isDirectCat = Array.isArray(catFactor?.value) && catFactor.value.includes(lineName);
+                                        
+                                        // Case 2: Sub-lines (JR, Subway, Tram) - Must also check if parent category is selected
+                                        const jrFactor = phase.factors?.find(f => f.id === 'f1-line-sub-jr');
+                                        const subwayFactor = phase.factors?.find(f => f.id === 'f1-line-sub-subway');
+                                        const tramFactor = phase.factors?.find(f => f.id === 'f1-line-sub-tram');
+                                        
+                                        const isJrSub = Array.isArray(catFactor?.value) && catFactor.value.includes('JR北海道') && Array.isArray(jrFactor?.value) && jrFactor.value.includes(lineName);
+                                        const isSubwaySub = Array.isArray(catFactor?.value) && catFactor.value.includes('札幌地下鉄') && Array.isArray(subwayFactor?.value) && subwayFactor.value.includes(lineName);
+                                        const isTramSub = Array.isArray(catFactor?.value) && catFactor.value.includes('市電・路面電車') && Array.isArray(tramFactor?.value) && tramFactor.value.includes(lineName);
+                                        
+                                        isVisible = isDirectCat || isJrSub || isSubwaySub || isTramSub;
+                                      }
+                                        
+                                      if (!isVisible) return null;
                                     }
 
                                     return (
-                                      <div key={factor.id} className={`space-y-2 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''}`}>
-                                        <label className="text-xs font-semibold text-slate-600">{factor.title}</label>
+                                      <div key={factor.id} className={`space-y-4 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''}`}>
+                                        <label className="text-base sm:text-lg font-display font-black tracking-widest text-prestige-gold uppercase block underline decoration-prestige-gold/30 underline-offset-4">{factor.title}</label>
                                         
                                         {(factor.type === 'text' || factor.type === 'textarea') && (
                                           <FactorInput factor={factor} phaseId={phase.id} handleFactorChange={handleFactorChange} />
@@ -1770,7 +1892,7 @@ export default function App() {
                                         <select 
                                           value={factor.value || ''} 
                                           onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
-                                          className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-shadow"
+                                          className="w-full text-base sm:text-lg px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic"
                                         >
                                           <option value="">選択してください</option>
                                           {factor.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1778,11 +1900,11 @@ export default function App() {
                                       )}
                                       
                                       {factor.type === 'checkbox_group' && (
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="flex flex-wrap gap-4">
                                           {factor.options?.map(opt => {
                                             const isChecked = (factor.value as string[] || []).includes(opt);
                                             return (
-                                              <label key={opt} className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${isChecked ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                                              <label key={opt} className={`flex items-center space-x-2 text-base font-display font-bold tracking-widest uppercase px-6 py-4 border transition-all duration-300 cursor-pointer ${isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white'}`}>
                                                 <input 
                                                   type="checkbox" 
                                                   className="hidden" 
@@ -1793,9 +1915,6 @@ export default function App() {
                                                     handleFactorChange(phase.id, factor.id, next);
                                                   }} 
                                                 />
-                                                <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
-                                                  {isChecked && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                                                </div>
                                                 <span>{opt}</span>
                                               </label>
                                             )
@@ -1804,15 +1923,15 @@ export default function App() {
                                       )}
 
                                       {factor.type === 'date' && (
-                                        <div className="flex items-center space-x-3">
+                                        <div className="flex items-center space-x-6">
                                           <input 
                                             type="date" 
                                             value={factor.value || ''} 
                                             onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
-                                            className="flex-1 text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
+                                            className="flex-1 text-base sm:text-lg px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all"
                                           />
-                                          {factor.value && (
-                                            <span className="text-sm font-medium text-slate-600 bg-slate-100 px-3 py-1.5 rounded-md">
+                                          {factor.value && factor.id.includes('birth') && (
+                                            <span className="text-base font-display font-bold tracking-widest text-prestige-gold uppercase px-4 py-2 bg-prestige-gold/5 border border-prestige-gold/10">
                                               {calculateAgeAndEra(factor.value)}
                                             </span>
                                           )}
@@ -1903,13 +2022,16 @@ export default function App() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-400 p-4">
-            <div className="text-center">
-              <ClipboardList className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-sm sm:text-base">左側のメニューからお客様を選択するか、<br/>新しく追加してください。</p>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <div className="text-center max-w-sm">
+              <div className="w-24 h-24 bg-luxury-ink/5 rounded-full flex items-center justify-center mx-auto mb-8 border border-luxury-border/50">
+                <ClipboardList className="w-10 h-10 text-prestige-gold opacity-40" />
+              </div>
+              <h3 className="text-xl font-light font-serif text-luxury-ink mb-4 tracking-tight uppercase">未選択</h3>
+              <p className="text-sm font-display font-bold tracking-widest text-luxury-sage uppercase leading-relaxed">左側のメニューからお客様を選択するか、<br/>新しい案件を登録してください。</p>
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="mt-6 md:hidden px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium shadow-sm"
+                className="mt-10 md:hidden px-8 py-3 bg-luxury-ink text-white text-xs font-display font-bold tracking-[0.2em] uppercase transition-all hover:bg-prestige-gold"
               >
                 メニューを開く
               </button>

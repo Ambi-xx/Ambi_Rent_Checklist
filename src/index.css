@@ -1,17 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500;600&family=Outfit:wght@300;400;500;600&family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Shippori Mincho", serif;
+  --font-display: "Outfit", sans-serif;
+  --font-sans: "Noto Sans JP", "Inter", ui-sans-serif, system-ui, sans-serif;
   
-  /* Primary colors based on screenshot */
-  --color-primary: #3B82F6;
-  --color-success: #10B981;
-  --color-sidebar: #F8FAFC;
+  /* Luxury Palette - Refined for Readability */
+  --color-prestige-gold: #B8860B; /* Darker Gold */
+  --color-luxury-ink: #1F1F1F;
+  --color-luxury-paper: #FCFBF7;
+  --color-luxury-sage: #4A4A35; /* Darker Sage */
+  --color-luxury-border: rgba(31, 31, 31, 0.15);
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    @apply bg-luxury-paper text-luxury-ink font-sans antialiased;
   }
 }
 
