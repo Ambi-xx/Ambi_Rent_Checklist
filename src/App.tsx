@@ -122,6 +122,7 @@ const initialData: Phase[] = [
       { id: 'f1-buildtype-other', title: 'その他の建物種類詳細', type: 'text', value: '', placeholder: '具体的な建物種類をご記入ください' },
       { id: 'f1-layout', title: '間取りタイプ', type: 'checkbox_group', value: [], options: ['1R・1K', '1LDK', '2LDK', '3LDK', '4LDK', '5LDK以上'] },
       { id: 'f1-rent', title: '希望家賃 (共益費・駐車代込)', type: 'text', value: '', placeholder: '上限 〇〇 万円まで' },
+      { id: 'f1-fee-timing', title: '初期費用希望', type: 'fee_timing_group', value: [] },
       { id: 'f1-parking-needed', title: '駐車場利用', type: 'select', value: '', options: ['不要', '要'] },
       { id: 'f1-parking-count', title: '駐車台数', type: 'select', value: '', options: ['1台', '2台', '3台以上'] },
       { id: 'f1-car-type', title: '車種タイプ', type: 'select', value: '', options: ['軽自動車', '普通車(5ナンバー)', '普通車(3ナンバー)', '大型/SUV', 'ハイルーフ', '外車', 'その他'] },
@@ -147,9 +148,7 @@ const initialData: Phase[] = [
     id: 'phase-2',
     title: '2. 物件選定・提案',
     iconName: 'search',
-    factors: [
-      { id: 'f2-1', title: '初期費用希望', type: 'fee_timing_group', value: [] },
-    ],
+    factors: [],
     tasks: [
       { id: 't2-2', title: '物件選定・確認', description: '問い合わせた物件情報をアーカイブとして記録します', completed: false, data: { properties: [] } },
     ]
@@ -237,7 +236,7 @@ const calculateAgeAndEra = (dateString: string) => {
   }
 };
 
-const CompositionInput = ({ value, onChange, className, placeholder, type = "text", autoFocus }: { value: string, onChange: (val: string) => void, className?: string, placeholder?: string, type?: string, autoFocus?: boolean }) => {
+const CompositionInput = ({ value, onChange, className, placeholder, type = "text", autoFocus, disabled }: { value: string, onChange: (val: string) => void, className?: string, placeholder?: string, type?: string, autoFocus?: boolean, disabled?: boolean }) => {
   const [localValue, setLocalValue] = useState(value || '');
   const [isComposing, setIsComposing] = useState(false);
 
@@ -277,11 +276,12 @@ const CompositionInput = ({ value, onChange, className, placeholder, type = "tex
       onCompositionEnd={handleCompositionEnd}
       onBlur={handleBlur}
       autoFocus={autoFocus}
+      disabled={disabled}
     />
   );
 };
 
-const CompositionTextarea = ({ value, onChange, className, placeholder, rows }: { value: string, onChange: (val: string) => void, className?: string, placeholder?: string, rows?: number }) => {
+const CompositionTextarea = ({ value, onChange, className, placeholder, rows, disabled }: { value: string, onChange: (val: string) => void, className?: string, placeholder?: string, rows?: number, disabled?: boolean }) => {
   const [localValue, setLocalValue] = useState(value || '');
   const [isComposing, setIsComposing] = useState(false);
 
@@ -320,18 +320,20 @@ const CompositionTextarea = ({ value, onChange, className, placeholder, rows }: 
       onCompositionEnd={handleCompositionEnd}
       onBlur={handleBlur}
       rows={rows}
+      disabled={disabled}
     />
   );
 };
 
-const FactorInput = ({ factor, phaseId, handleFactorChange }: { factor: Factor, phaseId: string, handleFactorChange: (phaseId: string, factorId: string, newValue: any) => void }) => {
+const FactorInput = ({ factor, phaseId, handleFactorChange, disabled }: { factor: Factor, phaseId: string, handleFactorChange: (phaseId: string, factorId: string, newValue: any) => void, disabled?: boolean }) => {
   if (factor.type === 'textarea') {
     return (
       <CompositionTextarea 
         value={factor.value || ''} 
         onChange={(val) => handleFactorChange(phaseId, factor.id, val)} 
-        className="w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 resize-y min-h-[100px]" 
+        className={`w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 resize-y min-h-[100px] ${disabled ? 'opacity-60 grayscale' : ''}`} 
         placeholder={factor.placeholder} 
+        disabled={disabled}
       />
     );
   }
@@ -341,8 +343,9 @@ const FactorInput = ({ factor, phaseId, handleFactorChange }: { factor: Factor, 
       type="text" 
       value={factor.value || ''} 
       onChange={(val) => handleFactorChange(phaseId, factor.id, val)} 
-      className="w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30" 
+      className={`w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 ${disabled ? 'opacity-60 grayscale' : ''}`} 
       placeholder={factor.placeholder} 
+      disabled={disabled}
     />
   );
 };
@@ -595,7 +598,17 @@ export default function App() {
       roomNumber: '',
       foreignerAllowed: false,
       requiredDocs: [],
-      notes: ''
+      notes: '',
+      monthlyRent: '',
+      managementFee: '',
+      securityDeposit: '',
+      keyMoney: '',
+      guaranteeDeposit: '',
+      neighborhoodFee: '',
+      parkingFee: '',
+      managementCompanyTel: '',
+      managementCompanyFax: '',
+      isConfirmed: false
     };
 
     const currentData = task.data || { properties: [] };
@@ -1345,95 +1358,239 @@ export default function App() {
                                       </h5>
                                       {task.id === 't2-2' ? (
                                         <div className="mt-3 space-y-4" onClick={e => e.stopPropagation()}>
-                                          {task.data?.properties?.map((property: any, index: number) => (
-                                            <div key={property.id} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm relative group">
-                                              <button 
-                                                onClick={() => handleRemoveProperty(phase.id, task.id, property.id)}
-                                                className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                              >
-                                                <X className="w-4 h-4" />
-                                              </button>
-                                              
-                                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                                                <div>
-                                                  <label className="block text-xs font-medium text-slate-500 mb-1">管理会社名</label>
-                                                  <CompositionInput 
-                                                    type="text" 
-                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
-                                                    placeholder="例: 〇〇不動産"
-                                                    value={property.managementCompany || ''}
-                                                    onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'managementCompany', val)}
-                                                  />
-                                                </div>
-                                                <div>
-                                                  <label className="block text-xs font-medium text-slate-500 mb-1">物件名</label>
-                                                  <CompositionInput 
-                                                    type="text" 
-                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
-                                                    placeholder="例: メゾン〇〇"
-                                                    value={property.apartmentName || ''}
-                                                    onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'apartmentName', val)}
-                                                  />
-                                                </div>
-                                                <div>
-                                                  <label className="block text-xs font-medium text-slate-500 mb-1">号室</label>
-                                                  <CompositionInput 
-                                                    type="text" 
-                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
-                                                    placeholder="例: 201"
-                                                    value={property.roomNumber || ''}
-                                                    onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'roomNumber', val)}
-                                                  />
-                                                </div>
-                                              </div>
+                                          {task.data?.properties?.map((property: any, index: number) => {
+                                            const isArchived = property.isConfirmed;
+                                            return (
+                                              <div key={property.id} className={`bg-white border rounded-lg shadow-sm relative group transition-all duration-500 ${isArchived ? 'border-slate-100 bg-slate-50/50 grayscale-[0.5]' : 'border-slate-200'}`}>
+                                                <button 
+                                                  onClick={() => handleRemoveProperty(phase.id, task.id, property.id)}
+                                                  className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                                >
+                                                  <X className="w-4 h-4" />
+                                                </button>
+                                                
+                                                {isArchived && (
+                                                  <div className="absolute top-4 right-10 flex items-center space-x-1 px-3 py-1 bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold">
+                                                    <Archive className="w-3.5 h-3.5" />
+                                                    <span className="text-[10px] font-display font-bold tracking-widest uppercase">Archived</span>
+                                                  </div>
+                                                )}
 
-                                              <div className="bg-slate-50 p-3 rounded-md border border-slate-200 space-y-3 mb-3">
-                                                <p className="text-xs font-bold text-slate-500">必要書類・条件</p>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                  <label className="flex items-center space-x-2 cursor-pointer p-1.5 hover:bg-slate-100 rounded transition-colors">
-                                                    <input 
-                                                      type="checkbox" 
-                                                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                                      checked={property.foreignerAllowed || false}
-                                                      onChange={(e) => handleUpdateProperty(phase.id, task.id, property.id, 'foreignerAllowed', e.target.checked)}
-                                                    />
-                                                    <span className="text-sm text-slate-700">外国人入居可</span>
-                                                  </label>
-                                                  {['在留カード', '日本国籍の緊急連絡先', '連帯保証人'].map(doc => (
-                                                    <label key={doc} className="flex items-center space-x-2 cursor-pointer p-1.5 hover:bg-slate-100 rounded transition-colors">
-                                                      <input 
-                                                        type="checkbox" 
-                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                                        checked={property.requiredDocs?.includes(doc) || false}
-                                                        onChange={(e) => {
-                                                          const currentDocs = property.requiredDocs || [];
-                                                          const newDocs = e.target.checked 
-                                                            ? [...currentDocs, doc] 
-                                                            : currentDocs.filter((d: string) => d !== doc);
-                                                          handleUpdateProperty(phase.id, task.id, property.id, 'requiredDocs', newDocs);
-                                                        }}
+                                                <div className={`p-6 space-y-6 ${isArchived ? 'pointer-events-none' : ''}`}>
+                                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">管理会社名</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic"
+                                                        placeholder="例: 〇〇不動産"
+                                                        value={property.managementCompany || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'managementCompany', val)}
+                                                        disabled={isArchived}
                                                       />
-                                                      <span className="text-sm text-slate-700">{doc}</span>
-                                                    </label>
-                                                  ))}
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">物件名</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic"
+                                                        placeholder="例: メゾン〇〇"
+                                                        value={property.apartmentName || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'apartmentName', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">号室</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic"
+                                                        placeholder="例: 201"
+                                                        value={property.roomNumber || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'roomNumber', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">月額賃料</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="6.5万円"
+                                                        value={property.monthlyRent || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'monthlyRent', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">共益費・管理費</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="5,000円"
+                                                        value={property.managementFee || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'managementFee', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">敷金</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="1ヶ月"
+                                                        value={property.securityDeposit || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'securityDeposit', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">礼金</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="なし"
+                                                        value={property.keyMoney || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'keyMoney', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">保証金</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="なし"
+                                                        value={property.guaranteeDeposit || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'guaranteeDeposit', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">町内会費</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="300円"
+                                                        value={property.neighborhoodFee || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'neighborhoodFee', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">駐車場使用料</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="8,800円"
+                                                        value={property.parkingFee || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'parkingFee', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">管理会社TEL</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="03-0000-0000"
+                                                        value={property.managementCompanyTel || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'managementCompanyTel', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">管理会社FAX</label>
+                                                      <CompositionInput 
+                                                        type="text" 
+                                                        className="w-full text-sm px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none"
+                                                        placeholder="03-0000-0000"
+                                                        value={property.managementCompanyFax || ''}
+                                                        onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'managementCompanyFax', val)}
+                                                        disabled={isArchived}
+                                                      />
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="bg-slate-50/50 p-4 border border-slate-100 flex flex-col space-y-4">
+                                                    <p className="text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase">必要書類・条件</p>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                      {[
+                                                        { id: 'foreignerAllowed', label: '外国人入居可' },
+                                                        { id: 'zairyu', label: '在留カード', isDoc: true },
+                                                        { id: 'emergency', label: '日本国籍の緊急連絡先', isDoc: true },
+                                                        { id: 'guarantor', label: '連帯保証人', isDoc: true }
+                                                      ].map(item => {
+                                                        const isChecked = item.isDoc 
+                                                          ? property.requiredDocs?.includes(item.label) 
+                                                          : property.foreignerAllowed;
+                                                        return (
+                                                          <label key={item.id} className={`flex items-center space-x-2 p-2 rounded transition-colors group/label ${isArchived ? 'opacity-50' : 'cursor-pointer hover:bg-white'}`}>
+                                                            <div className={`w-4 h-4 border flex items-center justify-center transition-colors ${isChecked ? 'bg-luxury-ink border-luxury-ink' : 'bg-white border-luxury-border group-hover/label:border-prestige-gold'}`}>
+                                                              {isChecked && <CheckSquare className="w-3 h-3 text-white" />}
+                                                            </div>
+                                                            <input 
+                                                              type="checkbox" 
+                                                              className="hidden" 
+                                                              checked={isChecked}
+                                                              disabled={isArchived}
+                                                              onChange={(e) => {
+                                                                if (item.isDoc) {
+                                                                  const currentDocs = property.requiredDocs || [];
+                                                                  const newDocs = e.target.checked 
+                                                                    ? [...currentDocs, item.label] 
+                                                                    : currentDocs.filter((d: string) => d !== item.label);
+                                                                  handleUpdateProperty(phase.id, task.id, property.id, 'requiredDocs', newDocs);
+                                                                } else {
+                                                                  handleUpdateProperty(phase.id, task.id, property.id, item.id, e.target.checked);
+                                                                }
+                                                              }}
+                                                            />
+                                                            <span className="text-xs font-display font-medium tracking-wider text-luxury-sage uppercase">{item.label}</span>
+                                                          </label>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="space-y-2">
+                                                    <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase">その他の確認事項（空室状況、内見方法など）</label>
+                                                    <CompositionTextarea 
+                                                      className="w-full text-sm px-4 py-3 border border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all resize-y min-h-[80px]"
+                                                      placeholder="詳細をご記入ください..."
+                                                      value={property.notes || ''}
+                                                      onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'notes', val)}
+                                                      disabled={isArchived}
+                                                    />
+                                                  </div>
+
+                                                  {!isArchived && (
+                                                    <div className="pt-4 border-t border-slate-100 flex justify-end">
+                                                      <button 
+                                                        onClick={() => handleUpdateProperty(phase.id, task.id, property.id, 'isConfirmed', true)}
+                                                        className="px-8 py-2.5 bg-luxury-ink text-white font-display font-bold text-xs tracking-[0.2em] uppercase hover:bg-prestige-gold transition-all duration-500 shadow-lg shadow-luxury-ink/20"
+                                                      >
+                                                        確定してアーカイブ
+                                                      </button>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               </div>
-
-                                              <CompositionTextarea 
-                                                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow resize-y min-h-[60px]"
-                                                placeholder="その他の確認事項（空室状況、内見方法など）"
-                                                value={property.notes || ''}
-                                                onChange={(val) => handleUpdateProperty(phase.id, task.id, property.id, 'notes', val)}
-                                              />
-                                            </div>
-                                          ))}
+                                            );
+                                          })}
                                           
                                           <button 
                                             onClick={() => handleAddProperty(phase.id, task.id)}
-                                            className="w-full py-2 border-2 border-dashed border-slate-300 text-slate-500 rounded-lg hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center space-x-2 text-sm font-medium"
+                                            className="w-full py-6 border-2 border-dashed border-luxury-border text-luxury-sage rounded-none hover:border-prestige-gold hover:text-luxury-ink transition-all duration-500 flex items-center justify-center space-x-3 group"
                                           >
-                                            <Plus className="w-4 h-4" />
-                                            <span>物件を追加してアーカイブ</span>
+                                            <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-500" />
+                                            <span className="text-sm font-display font-bold tracking-[0.2em] uppercase">物件情報を追加</span>
                                           </button>
                                         </div>
                                       ) : task.id === 't3-1' ? (
@@ -1477,25 +1634,36 @@ export default function App() {
                                               </div>
 
                                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                                                <div>
-                                                  <label className="block text-xs font-medium text-slate-500 mb-1">物件名</label>
-                                                  <CompositionInput 
-                                                    type="text" 
-                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
-                                                    placeholder="例: メゾン〇〇"
-                                                    value={viewing.propertyName || ''}
-                                                    onChange={(val) => handleUpdateViewing(phase.id, task.id, viewing.id, 'propertyName', val)}
-                                                  />
+                                                <div className="sm:col-span-2">
+                                                  <label className="block text-xs font-medium text-slate-500 mb-1">物件選択</label>
+                                                  <select
+                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow bg-white"
+                                                    value={`${viewing.propertyName || ''}|${viewing.roomNumber || ''}`}
+                                                    onChange={(e) => {
+                                                      const [name, room] = e.target.value.split('|');
+                                                      handleUpdateViewing(phase.id, task.id, viewing.id, 'propertyName', name);
+                                                      handleUpdateViewing(phase.id, task.id, viewing.id, 'roomNumber', room);
+                                                    }}
+                                                  >
+                                                    <option value="|">物件を選択してください</option>
+                                                    {selectedChecklist?.phases.find((p: Phase) => p.id === 'phase-2')?.tasks.find((t: Task) => t.id === 't2-2')?.data?.properties?.map((prop: any) => (
+                                                      <option key={prop.id} value={`${prop.apartmentName}|${prop.roomNumber}`}>
+                                                        {prop.apartmentName} {prop.roomNumber}
+                                                      </option>
+                                                    ))}
+                                                  </select>
                                                 </div>
                                                 <div>
-                                                  <label className="block text-xs font-medium text-slate-500 mb-1">号室</label>
-                                                  <CompositionInput 
-                                                    type="text" 
-                                                    className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
-                                                    placeholder="例: 201"
-                                                    value={viewing.roomNumber || ''}
-                                                    onChange={(val) => handleUpdateViewing(phase.id, task.id, viewing.id, 'roomNumber', val)}
-                                                  />
+                                                  <label className="block text-xs font-medium text-slate-500 mb-1">物件名（自動入力）</label>
+                                                  <div className="w-full text-sm px-3 py-2 border border-slate-100 bg-slate-50 text-slate-500 rounded-md">
+                                                    {viewing.propertyName || '未選択'}
+                                                  </div>
+                                                </div>
+                                                <div>
+                                                  <label className="block text-xs font-medium text-slate-500 mb-1">号室（自動入力）</label>
+                                                  <div className="w-full text-sm px-3 py-2 border border-slate-100 bg-slate-50 text-slate-500 rounded-md">
+                                                    {viewing.roomNumber || '未選択'}
+                                                  </div>
                                                 </div>
                                               </div>
 
@@ -1804,12 +1972,18 @@ export default function App() {
 
                             {/* Factors Section */}
                             {phase.factors && phase.factors.length > 0 && (
-                              <div className="bg-white/50 p-8 sm:p-10 border border-luxury-border">
+                              <div className={`relative bg-white/50 p-8 sm:p-10 border border-luxury-border transition-all duration-700 ${phase.id === 'phase-1' && phase.tasks.find(t => t.id === 't1-1')?.completed ? 'bg-slate-50/80 saturate-[0.2]' : ''}`}>
                                 {phase.id === 'phase-1' && (
-                                  <div className="flex justify-end mb-8">
+                                  <div className="flex justify-between items-center mb-8">
+                                    {phase.tasks.find(t => t.id === 't1-1')?.completed && (
+                                      <div className="flex items-center space-x-2 text-luxury-sage bg-white px-3 py-1.5 border border-luxury-border shadow-sm animate-in fade-in slide-in-from-left-4 duration-500">
+                                        <Archive className="w-4 h-4 text-prestige-gold" />
+                                        <span className="text-[10px] font-display font-bold tracking-[0.2em] uppercase">Hearing Archived</span>
+                                      </div>
+                                    )}
                                     <button
                                       onClick={downloadHearingSheet}
-                                      className="flex items-center space-x-2 text-xs font-display font-bold tracking-widest uppercase bg-transparent text-luxury-ink hover:text-prestige-gold transition-colors"
+                                      className={`flex items-center space-x-2 text-xs font-display font-bold tracking-widest uppercase bg-transparent text-luxury-ink hover:text-prestige-gold transition-colors ml-auto ${phase.tasks.find(t => t.id === 't1-1')?.completed ? '' : ''}`}
                                     >
                                       <Download className="w-4 h-4" />
                                       <span>ヒアリングシート出力</span>
@@ -1818,6 +1992,8 @@ export default function App() {
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-10">
                                   {phase.factors.map(factor => {
+                                    const isPhaseLocked = phase.id === 'phase-1' && phase.tasks.find(t => t.id === 't1-1')?.completed;
+                                    
                                     // Conditional rendering for specific fields
                                     if (factor.id.endsWith('-other') || 
                                         factor.id === 'f1-occupants-disability-detail' || 
@@ -1881,18 +2057,19 @@ export default function App() {
                                     }
 
                                     return (
-                                      <div key={factor.id} className={`space-y-4 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''}`}>
-                                        <label className="text-base sm:text-lg font-display font-black tracking-widest text-prestige-gold uppercase block underline decoration-prestige-gold/30 underline-offset-4">{factor.title}</label>
+                                      <div key={factor.id} className={`space-y-4 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''} ${isPhaseLocked ? 'pointer-events-none' : ''}`}>
+                                        <label className={`text-base sm:text-lg font-display font-black tracking-widest uppercase block underline underline-offset-4 transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 decoration-luxury-sage/20' : 'text-prestige-gold decoration-prestige-gold/30'}`}>{factor.title}</label>
                                         
                                         {(factor.type === 'text' || factor.type === 'textarea') && (
-                                          <FactorInput factor={factor} phaseId={phase.id} handleFactorChange={handleFactorChange} />
+                                          <FactorInput factor={factor} phaseId={phase.id} handleFactorChange={handleFactorChange} disabled={isPhaseLocked} />
                                         )}
                                         
                                         {factor.type === 'select' && (
                                         <select 
                                           value={factor.value || ''} 
                                           onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
-                                          className="w-full text-base sm:text-lg px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic"
+                                          disabled={isPhaseLocked}
+                                          className={`w-full text-base sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all placeholder:italic ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
                                         >
                                           <option value="">選択してください</option>
                                           {factor.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1904,11 +2081,12 @@ export default function App() {
                                           {factor.options?.map(opt => {
                                             const isChecked = (factor.value as string[] || []).includes(opt);
                                             return (
-                                              <label key={opt} className={`flex items-center space-x-2 text-base font-display font-bold tracking-widest uppercase px-6 py-4 border transition-all duration-300 cursor-pointer ${isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white'}`}>
+                                              <label key={opt} className={`flex items-center space-x-2 text-base font-display font-bold tracking-widest uppercase px-6 py-4 border transition-all duration-300 ${isPhaseLocked ? (isChecked ? 'bg-luxury-sage/30 border-luxury-sage/30 text-luxury-ink/50' : 'bg-transparent border-luxury-border/20 text-luxury-sage/20') : (isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md cursor-pointer' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white cursor-pointer')}`}>
                                                 <input 
                                                   type="checkbox" 
                                                   className="hidden" 
                                                   checked={isChecked} 
+                                                  disabled={isPhaseLocked}
                                                   onChange={(e) => {
                                                     const current = factor.value as string[] || [];
                                                     const next = e.target.checked ? [...current, opt] : current.filter(c => c !== opt);
@@ -1927,11 +2105,12 @@ export default function App() {
                                           <input 
                                             type="date" 
                                             value={factor.value || ''} 
+                                            disabled={isPhaseLocked}
                                             onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
-                                            className="flex-1 text-base sm:text-lg px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all"
+                                            className={`flex-1 text-base sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
                                           />
                                           {factor.value && factor.id.includes('birth') && (
-                                            <span className="text-base font-display font-bold tracking-widest text-prestige-gold uppercase px-4 py-2 bg-prestige-gold/5 border border-prestige-gold/10">
+                                            <span className={`text-base font-display font-bold tracking-widest uppercase px-4 py-2 border transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 bg-luxury-sage/5 border-luxury-sage/10' : 'text-prestige-gold bg-prestige-gold/5 border-prestige-gold/10'}`}>
                                               {calculateAgeAndEra(factor.value)}
                                             </span>
                                           )}
@@ -1944,18 +2123,19 @@ export default function App() {
                                             {['敷金ゼロ', '礼金ゼロ', 'フリーレント希望', 'ネット無料'].map(opt => {
                                               const isChecked = (factor.value as string[] || []).includes(opt);
                                               return (
-                                                <label key={opt} className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-md border cursor-pointer transition-colors ${isChecked ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                                                <label key={opt} className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors ${isPhaseLocked ? (isChecked ? 'bg-slate-100 border-slate-200 text-slate-400' : 'bg-transparent border-slate-100 text-slate-300') : (isChecked ? 'bg-blue-50 border-blue-200 text-blue-700 cursor-pointer' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer')}`}>
                                                   <input 
                                                     type="checkbox" 
                                                     className="hidden" 
                                                     checked={isChecked} 
+                                                    disabled={isPhaseLocked}
                                                     onChange={(e) => {
                                                       const current = factor.value as string[] || [];
                                                       const next = e.target.checked ? [...current, opt] : current.filter(c => c !== opt);
                                                       handleFactorChange(phase.id, factor.id, next);
                                                     }} 
                                                   />
-                                                  <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
+                                                  <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? (isPhaseLocked ? 'bg-slate-300 border-slate-300' : 'bg-blue-500 border-blue-500') : 'border-slate-300'}`}>
                                                     {isChecked && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
                                                   </div>
                                                   <span>{opt}</span>
