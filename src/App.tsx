@@ -484,6 +484,19 @@ export default function App() {
         );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Migrate legacy documents that are missing companyDomain
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (companyDomain && data.createdBy === user.uid && !data.companyDomain) {
+          updateDoc(doc(db, 'checklists', docSnap.id), {
+            companyDomain: companyDomain,
+            updatedAt: serverTimestamp()
+          }).catch(err => {
+            console.error('Error migrating old checklist:', err);
+          });
+        }
+      });
+
       const list = snapshot.docs.map(doc => {
         const data = doc.data();
         let phases = JSON.parse(data.phasesData);
