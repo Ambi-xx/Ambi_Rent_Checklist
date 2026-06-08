@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { db, auth, signInWithGoogle, logOut } from './firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { OperationType, handleFirestoreError } from './firebase';
 
 type Task = {
@@ -372,6 +372,13 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   
+  // Email/Password login state additions
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  
   const [checklists, setChecklists] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -506,6 +513,38 @@ export default function App() {
 
     return () => unsubscribe();
   }, [isAuthReady, user]);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setIsAuthLoading(true);
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      }
+      setAuthEmail('');
+      setAuthPassword('');
+    } catch (err: any) {
+      console.error(err);
+      let errorMsg = err.message;
+      if (err.code === 'auth/invalid-email') {
+        errorMsg = '無効なメールアドレス形式です。';
+      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errorMsg = 'メールアドレスまたはパスワードが正しくありません。';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'パスワードは6文字以上で入力してください。';
+      } else if (err.code === 'auth/email-already-in-use') {
+        errorMsg = 'このメールアドレスは既に登録されています。';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMsg = 'メール/パスワード認証が有効になっていません。Firebase ConsoleのAuthentication設定で「メール/パスワード」を有効化してください。';
+      }
+      setAuthError(errorMsg);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2535,18 +2574,81 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-luxury-paper px-4 font-serif">
-        <div className="max-w-md w-full bg-white/50 backdrop-blur-sm rounded-none border border-luxury-border p-12 text-center shadow-2xl">
-          <div className="w-20 h-20 bg-prestige-gold/10 text-prestige-gold rounded-full flex items-center justify-center mx-auto mb-8">
-            <Users className="w-10 h-10" />
+      <div className="min-h-screen flex items-center justify-center bg-luxury-paper px-4 font-sans">
+        <div className="max-w-md w-full bg-white border border-luxury-border p-8 sm:p-12 text-center shadow-2xl relative">
+          <div className="w-16 h-16 bg-prestige-gold/10 text-prestige-gold rounded-full flex items-center justify-center mx-auto mb-6">
+            <Users className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-medium tracking-widest text-luxury-ink mb-3 uppercase font-display">AMBITIOUS 業務管理</h1>
-          <p className="text-luxury-sage font-medium italic mb-10">賃貸業務管理システム</p>
+          <h1 className="text-2xl sm:text-3xl font-medium tracking-widest text-luxury-ink mb-2 uppercase font-serif">AMBITIOUS 業務管理</h1>
+          <p className="text-luxury-sage text-xs font-medium italic mb-8">賃貸業務管理システム</p>
+          
+          {authError && (
+            <div className="mb-6 p-3 bg-red-50 border border-red-200/50 text-red-600 text-xs text-left flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{authError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleEmailAuth} className="space-y-4 text-left mb-6">
+            <div>
+              <label className="block text-[10px] font-bold text-luxury-sage tracking-widest uppercase mb-1">
+                メールアドレス
+              </label>
+              <input
+                type="email"
+                required
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="example@ambitious-jp.com"
+                className="w-full px-3 py-2.5 bg-white border border-luxury-border text-sm placeholder-slate-400 focus:outline-none focus:border-prestige-gold transition-colors text-luxury-ink rounded-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-luxury-sage tracking-widest uppercase mb-1">
+                パスワード
+              </label>
+              <input
+                type="password"
+                required
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="6文字以上のパスワード"
+                className="w-full px-3 py-2.5 bg-white border border-luxury-border text-sm placeholder-slate-400 focus:outline-none focus:border-prestige-gold transition-colors text-luxury-ink rounded-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isAuthLoading}
+              className="w-full bg-luxury-ink hover:bg-prestige-gold text-white py-3 px-4 font-display text-xs font-bold tracking-widest uppercase transition-all duration-300 disabled:opacity-50 cursor-pointer rounded-none"
+            >
+              {isAuthLoading ? '処理中...' : isSignUp ? '会員登録してログイン' : 'メールでログイン'}
+            </button>
+            <div className="text-center pt-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setAuthError('');
+                }}
+                className="text-xs text-luxury-sage hover:text-prestige-gold transition-colors underline font-medium cursor-pointer"
+              >
+                {isSignUp ? '登録がお済みの方はこちら（ログイン）' : '新規アカウント登録はこちら'}
+              </button>
+            </div>
+          </form>
+
+          <div className="relative flex py-4 items-center">
+            <div className="flex-grow border-t border-luxury-border/30"></div>
+            <span className="flex-shrink mx-4 text-[10px] text-luxury-sage tracking-widest uppercase font-bold">または</span>
+            <div className="flex-grow border-t border-luxury-border/30"></div>
+          </div>
+
           <button
+            type="button"
             onClick={signInWithGoogle}
-            className="w-full flex items-center justify-center space-x-3 bg-luxury-ink hover:bg-prestige-gold text-white px-6 py-4 rounded-none font-display text-sm tracking-widest uppercase transition-all duration-500 group"
+            className="w-full flex items-center justify-center space-x-3 bg-white hover:bg-slate-50 text-luxury-ink border border-luxury-border py-3 px-4 font-display text-xs font-bold tracking-widest uppercase transition-all duration-300 group cursor-pointer rounded-none"
           >
-            <LogIn className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+            <LogIn className="w-4 h-4 group-hover:translate-x-0.5 transition-transform text-prestige-gold shrink-0" />
             <span>Googleでログイン</span>
           </button>
         </div>
