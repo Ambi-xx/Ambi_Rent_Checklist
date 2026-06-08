@@ -3,7 +3,7 @@ import { CheckCircle2, Circle, RefreshCw, ClipboardList, ChevronDown, ChevronUp,
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { db, auth, signInWithGoogle, logOut } from './firebase';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where, or } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { OperationType, handleFirestoreError } from './firebase';
 
@@ -473,7 +473,10 @@ export default function App() {
     const q = companyDomain
       ? query(
           collection(db, 'checklists'), 
-          where('companyDomain', '==', companyDomain)
+          or(
+            where('companyDomain', '==', companyDomain),
+            where('createdBy', '==', user.uid)
+          )
         )
       : query(
           collection(db, 'checklists'), 
