@@ -25,9 +25,23 @@ Object.entries(envConfigRaw).forEach(([k, v]) => {
 });
 
 // Merge configuration: Environment variables take precedence over local settings
-const finalConfig = {
+const mergedConfig = {
   ...firebaseConfigLocal,
   ...envConfig
+};
+
+// Defensive check: If projectId or apiKey is missing, fall back to a safe dummy config
+// so that initializeApp does not crash the entire application bundle on startup.
+const hasValidConfig = !!(mergedConfig && mergedConfig.projectId && mergedConfig.projectId !== 'dummy');
+
+const finalConfig = hasValidConfig ? mergedConfig : {
+  apiKey: "dummy-api-key-for-local-fallback",
+  authDomain: "dummy-project-id.firebaseapp.com",
+  projectId: "dummy-project-id",
+  storageBucket: "dummy-project-id.appspot.com",
+  messagingSenderId: "1234567890",
+  appId: "1:1234567890:web:dummy",
+  firestoreDatabaseId: "(default)"
 };
 
 // Initialize Firebase SDK

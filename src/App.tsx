@@ -895,8 +895,8 @@ export default function App() {
       const monthlyGuarantorFee = tData.monthlyGuarantorFee !== undefined ? tData.monthlyGuarantorFee : '800';
       const guarantorPaymentFee = tData.guarantorPaymentFee !== undefined ? tData.guarantorPaymentFee : '330';
       
-      const insuranceFee = tData.insuranceFee !== undefined ? tData.insuranceFee : '20000';
-      const includeInsurance = tData.includeInsurance !== undefined ? !!tData.includeInsurance : true;
+      const insuranceFee = tData.insuranceFee !== undefined ? tData.insuranceFee : '17000';
+      const includeInsurance = tData.includeInsurance !== undefined ? !!tData.includeInsurance : false;
       
       const keyExchangeFee = tData.keyExchangeFee !== undefined ? tData.keyExchangeFee : '22000';
       const disinfectionFee = tData.disinfectionFee !== undefined ? tData.disinfectionFee : '16500';
@@ -988,14 +988,10 @@ export default function App() {
           ["契約金合計 (概算)", `${totalTable.toLocaleString()} 円`, "※上記合計金額は概算です。"],
           ["調整済ご請求総額", `${parseAmount(totalAdjusted).toLocaleString()} 円`, "※確定初期費用額"],
           ["", "", ""],
-          ["【月額定期費用（翌月以降、毎月のお支払い）】", "", ""],
+          ["【保証会社関連月額費用】", "", ""],
           ["月額保証料 (毎月)", `${parseAmount(monthlyGuarantorFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"],
           ["保証会社支払手数料 (毎月)", `${parseAmount(guarantorPaymentFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"]
         );
-
-        if (parseAmount(parkingFee) > 0) {
-          dataAOA.push(["駐車場代 (毎月)", `${parseAmount(parkingFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"]);
-        }
 
         dataAOA.push(
           ["", "", ""],
@@ -1047,7 +1043,7 @@ export default function App() {
               {/* Quick totals summary */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-white p-3.5 border border-slate-100 rounded shadow-sm">
-                  <span className="text-slate-400 text-[10px] block font-medium">調整済すご請求総額（確定初期費用）</span>
+                  <span className="text-slate-400 text-[10px] block font-medium">調整済ご請求総額（確定初期費用）</span>
                   <span className="text-lg font-bold text-prestige-gold tracking-wide">
                     ¥{parseAmount(totalAdjusted).toLocaleString()} 円
                   </span>
@@ -1174,42 +1170,36 @@ export default function App() {
               {/* Monthly recurring charges preview */}
               <div className="bg-amber-50/40 p-4 border border-amber-200/40 rounded-lg space-y-1 text-slate-600">
                 <p className="font-bold text-slate-700 text-[10px] tracking-wider uppercase flex items-center gap-1.5 border-b border-amber-200/25 pb-1 mb-1.5">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold"></span>
-                  <span>月額定期費用（翌月以降、毎月のお支払い）</span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold shrink-0"></span>
+                  <span className="whitespace-nowrap">保証会社関連月額費用</span>
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="flex justify-between border-r border-amber-200/10 pr-2">
-                    <span className="text-slate-500">月額保証料:</span>
-                    <span className="font-bold text-slate-800">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円/月</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="flex justify-between sm:border-r border-slate-200/60 sm:pr-2 gap-2">
+                    <span className="text-slate-500 whitespace-nowrap shrink-0">月額保証料:</span>
+                    <span className="font-bold text-slate-800 whitespace-nowrap">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円/月</span>
                   </div>
-                  <div className="flex justify-between border-r border-amber-200/10 pr-2">
-                    <span className="text-slate-500">保証会社支払手数料:</span>
-                    <span className="font-bold text-slate-800">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円/月</span>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 whitespace-nowrap shrink-0">保証会社支払手数料:</span>
+                    <span className="font-bold text-slate-800 whitespace-nowrap">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円/月</span>
                   </div>
-                  {parseAmount(parkingFee) > 0 && (
-                    <div className="flex justify-between text-prestige-gold">
-                      <span>駐車場代 (毎月):</span>
-                      <span className="font-bold">¥{parseAmount(parkingFee).toLocaleString()} 円/月</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-white border border-slate-200 p-3.5 rounded-lg">
-                <div className="flex items-center space-x-2.5">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                  <div>
-                    <p className="font-bold text-slate-800">費用明細 Excel 出力</p>
-                    <p className="text-[10px] text-slate-400">作成した費用明細シートをExcel形式でダウンロードします</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-slate-200 p-4 rounded-lg gap-4">
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 text-xs sm:text-sm whitespace-nowrap">費用明細 Excel 出力</p>
+                    <p className="text-[10px] text-slate-400 truncate">作成した費用明細シートをExcel形式でダウンロードします</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleExportExpenseCalc}
-                  className="flex items-center space-x-1.5 px-4 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded hover:bg-emerald-100 transition-all font-bold text-xs shadow-sm cursor-pointer"
+                  className="flex items-center justify-center space-x-1.5 w-full sm:w-auto px-4 py-2 sm:py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded hover:bg-emerald-100 transition-all font-bold text-xs shadow-sm cursor-pointer shrink-0"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>明細書出力</span>
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">明細書出力</span>
                 </button>
               </div>
             </div>
@@ -1350,24 +1340,18 @@ export default function App() {
                 {/* Separately display monthly charges below */}
                 <div className="mt-3 p-3 bg-amber-50/50 border border-amber-200/50 rounded-lg space-y-1.5 text-slate-600 font-sans">
                   <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold"></span>
-                    <span>月額定期費用（翌月以降、毎月のお支払い）</span>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold shrink-0"></span>
+                    <span className="whitespace-nowrap">保証会社関連月額費用</span>
                   </p>
-                  <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
-                      <span className="text-slate-500 font-medium">月額保証料:</span>
-                      <span className="font-bold text-slate-800">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円 / 月</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs pt-1">
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1 gap-2">
+                      <span className="text-slate-500 font-medium whitespace-nowrap shrink-0">月額保証料:</span>
+                      <span className="font-bold text-slate-800 whitespace-nowrap font-sans">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円 / 月</span>
                     </div>
-                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
-                      <span className="text-slate-500 font-medium">保証会社支払手数料:</span>
-                      <span className="font-bold text-slate-800">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円 / 月</span>
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1 gap-2">
+                      <span className="text-slate-500 font-medium whitespace-nowrap shrink-0">保証会社支払手数料:</span>
+                      <span className="font-bold text-slate-800 whitespace-nowrap font-sans">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円 / 月</span>
                     </div>
-                    {parseAmount(parkingFee) > 0 && (
-                      <div className="flex justify-between border-b border-dashed border-slate-200 pb-1 col-span-2">
-                        <span className="text-slate-500 font-medium font-bold text-prestige-gold">駐車場代 (毎月):</span>
-                        <span className="font-bold text-slate-800">¥{parseAmount(parkingFee).toLocaleString()} 円 / 月</span>
-                      </div>
-                    )}
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium mt-1">※ 月額保証料およびお支払手数料は、契約時の初期請求合計額には含まれません。</p>
                 </div>
@@ -2631,13 +2615,13 @@ export default function App() {
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/50 z-30 md:hidden"
+          className="fixed inset-0 bg-slate-900/50 z-30 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-luxury-border flex flex-col h-screen transform transition-all duration-500 ease-in-out md:relative ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'md:translate-x-0 md:w-72' : 'md:-translate-x-full md:w-0 md:border-none overflow-hidden'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-luxury-border flex flex-col h-screen transform transition-all duration-500 ease-in-out lg:relative ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isDesktopSidebarOpen ? 'lg:translate-x-0 lg:w-72' : 'lg:-translate-x-full lg:w-0 lg:border-none overflow-hidden'}`}>
         <div className="p-6 border-b border-luxury-border">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center space-x-3">
@@ -2647,7 +2631,7 @@ export default function App() {
               <h1 className="font-display font-semibold tracking-wider text-luxury-ink uppercase text-sm">Ambitious 業務管理</h1>
             </div>
             <button 
-              className="md:hidden p-1 text-luxury-sage hover:bg-luxury-paper rounded"
+              className="lg:hidden p-1 text-luxury-sage hover:bg-luxury-paper rounded"
               onClick={() => setIsSidebarOpen(false)}
             >
               <X className="w-5 h-5" />
@@ -2775,23 +2759,25 @@ export default function App() {
       <main className="flex-1 flex flex-col h-screen overflow-y-auto relative">
         {selectedChecklist ? (
           <>
-            <header className="bg-white/80 backdrop-blur-md border-b border-luxury-border sticky top-0 z-20 px-4 sm:px-8 py-4 sm:py-10">
-              <div className="flex flex-col gap-4 sm:gap-8">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+            <header className="bg-white/85 backdrop-blur-md border-b border-luxury-border sticky top-0 z-20 px-4 sm:px-8 pt-4 pb-2.5 sm:pt-8 sm:pb-6 transition-all">
+              <div className="flex flex-col gap-4 sm:gap-6">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Left Column: Menu toggles, Customer name, Sync status */}
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0 w-full lg:w-auto">
                     <button 
                       onClick={() => setIsSidebarOpen(true)}
-                      className="md:hidden p-1.5 -ml-1 text-luxury-sage hover:bg-luxury-paper rounded-none"
+                      className="lg:hidden p-1.5 -ml-1 text-luxury-sage hover:bg-luxury-paper rounded-none shrink-0"
                     >
                       <Menu className="w-5 h-5" />
                     </button>
                     <button 
                       onClick={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
-                      className="hidden md:block p-2 -ml-2 text-luxury-sage hover:bg-luxury-paper rounded-none"
+                      className="hidden lg:block p-2 -ml-2 text-luxury-sage hover:bg-luxury-paper rounded-none shrink-0"
                     >
                       <Menu className="w-6 h-6" />
                     </button>
-                    <div className="min-w-0">
+                    
+                    <div className="min-w-0 flex-1">
                       {isEditingName ? (
                         <form 
                           onSubmit={(e) => {
@@ -2804,7 +2790,7 @@ export default function App() {
                             type="text"
                             value={editingNameVal}
                             onChange={(e) => setEditingNameVal(e.target.value)}
-                            className="text-lg sm:text-3xl font-normal font-serif text-luxury-ink border-b border-prestige-gold focus:outline-none focus:border-luxury-ink bg-transparent py-0 px-0 min-w-[100px] w-36 sm:w-64 tracking-tight"
+                            className="text-lg sm:text-2xl lg:text-3xl font-normal font-serif text-luxury-ink border-b border-prestige-gold focus:outline-none focus:border-luxury-ink bg-transparent py-0 px-0 min-w-[100px] w-36 sm:w-64 tracking-tight"
                             placeholder="お客様名"
                             autoFocus
                             onKeyDown={(e) => {
@@ -2813,13 +2799,13 @@ export default function App() {
                               }
                             }}
                           />
-                          <span className="text-lg sm:text-3xl font-serif text-luxury-ink whitespace-nowrap">様</span>
+                          <span className="text-lg sm:text-2xl lg:text-3xl font-serif text-luxury-ink whitespace-nowrap">様</span>
                           <button
                             type="submit"
                             className="p-1 text-prestige-gold hover:bg-prestige-gold/10 rounded transition-colors flex-shrink-0"
                             title="保存"
                           >
-                            <Check className="w-4 h-4 sm:w-6 sm:h-6" />
+                            <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                           <button
                             type="button"
@@ -2827,88 +2813,90 @@ export default function App() {
                             className="p-1 text-luxury-sage hover:bg-slate-100 rounded transition-colors flex-shrink-0"
                             title="キャンセル"
                           >
-                            <X className="w-4 h-4 sm:w-6 sm:h-6" />
+                            <X className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         </form>
                       ) : (
-                        <div className="flex items-center gap-2 group">
+                        <div className="flex items-baseline gap-2 group flex-wrap max-w-full">
                           <h2 
                             onClick={() => {
                               setEditingNameVal(selectedChecklist.customerName);
                               setIsEditingName(true);
                             }}
-                            className="text-xl sm:text-4xl font-normal font-serif text-luxury-ink tracking-tight truncate cursor-pointer hover:text-prestige-gold transition-colors flex-shrink-0"
+                            className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-normal font-serif text-luxury-ink tracking-tight cursor-pointer hover:text-prestige-gold transition-colors break-words max-w-full"
                             title="クリックして名前を変更"
                           >
-                            {selectedChecklist.customerName} 様
+                            {selectedChecklist.customerName}様
                           </h2>
                           <button
                             onClick={() => {
                               setEditingNameVal(selectedChecklist.customerName);
                               setIsEditingName(true);
                             }}
-                            className="p-1 text-luxury-sage hover:text-prestige-gold transition-all"
+                            className="p-1 text-luxury-sage hover:text-prestige-gold transition-all shrink-0 inline-flex align-middle"
                             title="名前を変更"
                           >
-                            <Pencil className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+                            <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           </button>
                         </div>
                       )}
                       
-                      <div className="flex items-center gap-2 mt-1 sm:mt-2">
-                        <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-prestige-gold rounded-full" />
-                        <p className="text-[10px] sm:text-xs font-display font-bold tracking-[0.2em] text-luxury-sage uppercase">同期済み</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="w-1.5 h-1.5 bg-prestige-gold rounded-full shrink-0 animate-pulse" />
+                        <p className="text-[10px] sm:text-xs font-display font-bold tracking-[0.15em] text-luxury-sage uppercase whitespace-nowrap">同期済み</p>
                       </div>
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-3 flex-shrink-0">
+                  {/* Right Column: Actions row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex lg:items-center lg:justify-end gap-2 lg:gap-3 w-full lg:w-auto border-t border-slate-200/40 pt-3 lg:border-none lg:pt-0">
                     <button 
                       onClick={downloadExcel}
-                      className="flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase bg-transparent border border-luxury-border text-luxury-ink hover:bg-luxury-ink hover:text-white transition-all duration-500 px-4 py-2"
+                      className="flex-1 lg:flex-initial flex items-center justify-center text-[10px] sm:text-xs font-display font-medium tracking-wider uppercase bg-transparent border border-luxury-border text-luxury-ink hover:bg-luxury-ink hover:text-white transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2"
                       title="Excelとしてダウンロード"
                     >
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      <span className="hidden sm:inline">Excel出力</span>
+                      <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 shrink-0" />
+                      <span className="whitespace-nowrap">Excel出力</span>
                     </button>
                     
                     <button 
                       onClick={uploadToDropbox}
                       disabled={isUploading}
-                      className="flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold hover:bg-prestige-gold hover:text-white transition-all duration-500 px-4 py-2 disabled:opacity-30"
+                      className="flex-1 lg:flex-initial flex items-center justify-center text-[10px] sm:text-xs font-display font-medium tracking-wider uppercase bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold hover:bg-prestige-gold hover:text-white transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2 disabled:opacity-30"
                       title="Dropboxへ直接保存"
                     >
-                      <CloudUpload className="w-4 h-4 mr-2" />
-                      <span className="hidden sm:inline">{isUploading ? '処理中...' : 'Dropbox保存'}</span>
+                      <CloudUpload className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 shrink-0" />
+                      <span className="whitespace-nowrap">{isUploading ? '保存中...' : 'Dropbox保存'}</span>
                     </button>
 
                     <button 
                       onClick={() => handleArchiveCustomer(selectedChecklist.id, selectedChecklist.customerName, selectedChecklist.status)}
-                      className={`flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase border transition-all duration-500 px-4 py-2 hover:shadow-sm ${
+                      className={`flex-1 lg:flex-initial flex items-center justify-center text-[10px] sm:text-xs font-display font-medium tracking-wider uppercase border transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2 hover:shadow-sm ${
                         selectedChecklist.status === 'archived'
                           ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 hover:bg-amber-500 hover:text-white'
                           : 'bg-transparent border-luxury-border text-luxury-ink hover:bg-luxury-ink hover:text-white'
                       }`}
-                      title={selectedChecklist.status === 'archived' ? "案件をアクティブに戻す（復元）" : "案件をアーカイブ保存（存档）"}
+                      title={selectedChecklist.status === 'archived' ? "案件をアクティブに戻す（復元）" : "案件をアーカイブに保存"}
                     >
-                      <Archive className="w-4 h-4 mr-2" />
-                      <span className="hidden sm:inline">
-                        {selectedChecklist.status === 'archived' ? '案件 復元' : '完了・存档'}
+                      <Archive className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 shrink-0" />
+                      <span className="whitespace-nowrap">
+                        {selectedChecklist.status === 'archived' ? '案件 復元' : 'アーカイブ'}
                       </span>
                     </button>
 
                     <button 
                       onClick={resetProgress}
-                      className="p-2 text-luxury-sage hover:text-red-600 transition-colors"
+                      className="flex-1 lg:flex-initial flex items-center justify-center text-[10px] sm:text-xs font-display font-medium tracking-wider uppercase bg-transparent border border-luxury-border text-luxury-sage hover:border-red-200 hover:text-red-500 transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2"
                       title="進捗リセット"
                     >
-                      <RefreshCw className="w-4 h-4" />
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                      <span className="whitespace-nowrap">進捗リセット</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="px-2 sm:px-12">
-                  <div className="relative flex justify-between items-center w-full max-w-[1400px] mx-auto">
+                <div className="px-2 sm:px-12 pt-4 pb-1">
+                  <div className="relative flex justify-between items-center w-full max-w-[1400px] mx-auto h-8 sm:h-12">
                     {/* Background Line */}
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-[1px] bg-luxury-border" />
                     {/* Active Line */}
@@ -2945,7 +2933,7 @@ export default function App() {
                           }`}>
                             {isComplete ? <CheckCircle2 className="w-4 h-4 sm:w-6 sm:h-6" /> : <span className="text-xs sm:text-sm font-display font-bold leading-none">{index + 1}</span>}
                           </div>
-                          <span className={`hidden md:block absolute top-14 text-[10px] sm:text-[11px] font-display font-medium tracking-[0.2em] whitespace-nowrap uppercase transition-colors duration-500 ${isComplete ? 'text-prestige-gold' : isCurrent ? 'text-luxury-ink' : 'text-luxury-sage/60'}`}>
+                          <span className={`hidden md:block absolute top-14 w-16 sm:w-24 text-center text-[9px] sm:text-[10px] sm:tracking-[0.1em] font-sans font-medium leading-tight uppercase transition-all duration-500 ${isComplete ? 'text-prestige-gold' : isCurrent ? 'text-luxury-ink md:font-semibold' : 'text-luxury-sage/60'}`}>
                             {phase.title.split('.')[1]?.trim() || phase.title}
                           </span>
                         </div>
@@ -2956,7 +2944,7 @@ export default function App() {
               </div>
             </header>
 
-            <div className="p-8 sm:p-12 max-w-[1400px] mx-auto w-full space-y-8 sm:space-y-12">
+            <div className="p-3.5 sm:p-6 lg:p-12 max-w-[1400px] mx-auto w-full space-y-6 sm:space-y-10">
               {selectedChecklist.phases.map((phase: Phase) => {
                 const phaseCompletedTasks = phase.tasks.filter(t => t.completed).length;
                 const phaseTotalTasks = phase.tasks.length;
@@ -2973,7 +2961,7 @@ export default function App() {
                   >
                     <button 
                       onClick={() => togglePhase(phase.id)}
-                      className="w-full px-6 py-5 sm:px-8 sm:py-6 flex items-center justify-between hover:bg-luxury-paper/50 transition-colors text-left group"
+                      className="w-full px-4 py-4 sm:px-8 sm:py-6 flex items-center justify-between hover:bg-luxury-paper/50 transition-colors text-left group"
                     >
                       <div className="flex items-center space-x-5 flex-1 min-w-0">
                         <div className={`p-3 rounded-none flex-shrink-0 transition-colors duration-500 ${isPhaseComplete ? 'bg-prestige-gold text-white' : 'bg-luxury-ink text-prestige-gold'}`}>
@@ -3040,7 +3028,7 @@ export default function App() {
 
                               const details = approved.details;
                               return (
-                                <div className="mb-8 bg-gradient-to-br from-white to-slate-50/50 border border-prestige-gold/40 rounded-xl p-5 sm:p-6 shadow-sm overflow-hidden animate-in fade-in duration-500">
+                                <div className="mb-8 bg-gradient-to-br from-white to-slate-50/50 border border-prestige-gold/40 rounded-xl p-4 sm:p-6 shadow-sm overflow-hidden animate-in fade-in duration-500">
                                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-4 mb-5 gap-3">
                                     <div className="space-y-1">
                                       <div className="flex items-center space-x-2 flex-wrap gap-1.5">
@@ -3123,7 +3111,7 @@ export default function App() {
                                   <div 
                                     key={task.id}
                                     onClick={() => toggleTask(phase.id, task.id)}
-                                    className={`group flex items-start space-x-6 p-6 sm:p-8 cursor-pointer transition-all duration-300 ${
+                                    className={`group flex items-start space-x-3.5 sm:space-x-6 p-4 sm:p-8 cursor-pointer transition-all duration-300 ${
                                       index !== phase.tasks.length - 1 ? 'border-b border-luxury-border' : ''
                                     } ${
                                       task.completed 
@@ -3164,7 +3152,7 @@ export default function App() {
                                                 </button>
                                                 
                                                 {isArchived ? (
-                                                  <div className="p-6 space-y-4 bg-slate-50/50">
+                                                  <div className="p-4 sm:p-6 space-y-4 bg-slate-50/50">
                                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 gap-2 mr-8 animate-in fade-in duration-300">
                                                       <div>
                                                         <div className="flex flex-wrap items-center gap-2">
@@ -3285,7 +3273,7 @@ export default function App() {
                                                     )}
                                                   </div>
                                                 ) : (
-                                                  <div className="p-6 space-y-6">
+                                                  <div className="p-4 sm:p-6 space-y-6">
                                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                     <div>
                                                       <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">管理会社名</label>
@@ -4307,7 +4295,7 @@ export default function App() {
                   <h3 className="text-xl sm:text-2xl font-serif font-normal text-luxury-ink tracking-tight uppercase">全手続きが完了いたしました</h3>
                   <p className="text-xs sm:text-sm font-display font-medium text-luxury-sage tracking-widest leading-relaxed max-w-xl mx-auto uppercase">
                     すべてのお手続きと確認内容が正常に完了しました。<br />
-                    この案件を「成約済みの歴史アーカイブ（存档）」へ移動し、完了保存しますか？
+                    この案件を「成約済みのアーカイブ」へ移動し、完了保存しますか？
                   </p>
                   
                   <div className="pt-2 flex justify-center">
@@ -4316,12 +4304,12 @@ export default function App() {
                         onClick={() => handleArchiveCustomer(selectedChecklist.id, selectedChecklist.customerName, selectedChecklist.status)}
                         className="px-8 py-3 bg-luxury-ink text-white text-xs font-display font-bold tracking-[0.2em] uppercase transition-all hover:bg-prestige-gold hover:shadow-lg shadow-prestige-gold/20 cursor-pointer"
                       >
-                        成約アーカイブに保存 (存档)
+                        成約アーカイブに保存
                       </button>
                     ) : (
                       <div className="flex items-center space-x-2 text-xs font-display font-bold tracking-wider text-prestige-gold bg-prestige-gold/5 border border-prestige-gold/20 px-6 py-3 uppercase">
                         <Check className="w-4 h-4 text-prestige-gold mr-1" />
-                        <span>歴史アーカイブに完了保存（存档）済みです</span>
+                        <span>アーカイブに完了保存済みです</span>
                       </div>
                     )}
                   </div>
