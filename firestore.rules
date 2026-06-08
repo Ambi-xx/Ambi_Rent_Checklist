@@ -33,7 +33,7 @@ service cloud.firestore {
         && 'companyDomain' in docData
         && docData.companyDomain != null
         && docData.companyDomain != ""
-        && request.auth.token.email.matches('.*@' + docData.companyDomain);
+        && request.auth.token.email.split('@')[1] == docData.companyDomain;
     }
 
     function isValidId(id) {
@@ -49,7 +49,7 @@ service cloud.firestore {
         && data.createdBy is string
         && data.createdAt is timestamp
         && data.updatedAt is timestamp
-        && (!('companyDomain' in data) || data.companyDomain == null || (data.companyDomain is string && (data.companyDomain == "" || ('email' in request.auth.token && request.auth.token.email.matches('.*@' + data.companyDomain)))));
+        && (!('companyDomain' in data) || data.companyDomain == null || (data.companyDomain is string && (data.companyDomain == "" || ('email' in request.auth.token && request.auth.token.email.split('@')[1] == data.companyDomain))));
     }
 
     // -------------------------------------------------------------------------
