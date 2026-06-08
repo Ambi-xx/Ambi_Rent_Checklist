@@ -31,14 +31,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
-      let errorMessage = 'An unexpected error occurred.';
+      let errorMessage = '予期しないエラーが発生しました。';
       let isFirestoreError = false;
 
       try {
         if (this.state.error?.message) {
           const parsed = JSON.parse(this.state.error.message);
           if (parsed.operationType && parsed.authInfo) {
-            errorMessage = `Firestore ${parsed.operationType} Error: ${parsed.error}`;
+            errorMessage = `Firestore ${parsed.operationType} エラー: ${parsed.error}`;
             isFirestoreError = true;
           }
         }
@@ -52,11 +52,11 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="max-w-md w-full border-2 border-ink p-8 bg-white shadow-[12px_12px_0px_rgba(20,20,20,0.1)] space-y-6">
             <div className="flex items-center gap-3 text-red-600">
               <AlertCircle className="w-6 h-6" />
-              <h2 className="font-bold uppercase tracking-tighter text-xl">System_Failure</h2>
+              <h2 className="font-bold uppercase tracking-tighter text-xl">システムエラー</h2>
             </div>
             
             <div className="space-y-2">
-              <div className="text-[10px] opacity-40 uppercase tracking-widest">Error_Log</div>
+              <div className="text-[10px] opacity-40 uppercase tracking-widest">エラーログ</div>
               <p className="text-xs leading-relaxed text-ink bg-gray-50 p-4 border border-line break-words">
                 {errorMessage}
               </p>
@@ -64,7 +64,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {isFirestoreError && (
               <p className="text-[10px] italic opacity-60">
-                [Tip] Please check your internet connection or ensure you are logged in with correct permissions.
+                [ヒント] インターネット接続を確認するか、適切な権限でログインしているか確認してください。
               </p>
             )}
 
@@ -73,7 +73,7 @@ export class ErrorBoundary extends Component<Props, State> {
               className="w-full py-3 bg-ink text-bg-tech font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:opacity-90 transition-all"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Restart_Terminal
+              アプリを再起動する
             </button>
           </div>
         </div>

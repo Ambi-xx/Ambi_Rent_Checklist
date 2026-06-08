@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, Circle, RefreshCw, ClipboardList, ChevronDown, ChevronUp, Home, Building, FileText, KeyRound, Download, CloudUpload, User, FileSpreadsheet, Plus, LogOut, LogIn, Trash2, Users, Search, Eye, PenTool, Settings, CheckSquare, Menu, X, Folder, Archive, Link as LinkIcon } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, ClipboardList, ChevronDown, ChevronUp, Home, Building, FileText, KeyRound, Download, CloudUpload, User, FileSpreadsheet, Plus, LogOut, LogIn, Trash2, Users, Search, Eye, PenTool, Settings, CheckSquare, Menu, X, Folder, Archive, Link as LinkIcon, Pencil, Check, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { db, auth, signInWithGoogle, logOut } from './firebase';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { OperationType, handleFirestoreError } from './firebase';
 
 type Task = {
   id: string;
@@ -14,7 +15,7 @@ type Task = {
   data?: any;
 };
 
-type FactorType = 'text' | 'textarea' | 'select' | 'checkbox_group' | 'date' | 'fee_timing_group';
+type FactorType = 'text' | 'textarea' | 'select' | 'checkbox_group' | 'date' | 'fee_timing_group' | 'address_group';
 
 type Factor = {
   id: string;
@@ -31,6 +32,21 @@ type Phase = {
   iconName: string;
   tasks: Task[];
   factors?: Factor[];
+};
+
+const searchAddressByZip = async (zipcode: string) => {
+  if (!zipcode || zipcode.length < 7) return null;
+  try {
+    const response = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode.replace('-', '')}`);
+    const data = await response.json();
+    if (data.results && data.results[0]) {
+      const result = data.results[0];
+      return `${result.address1}${result.address2}${result.address3}`;
+    }
+  } catch (error) {
+    console.error('Zip code search error:', error);
+  }
+  return null;
 };
 
 const HOKKAIDO_STATIONS: Record<string, string[]> = {
@@ -81,7 +97,7 @@ const initialData: Phase[] = [
       { id: 'f1-gender', title: '性別', type: 'select', value: '', options: ['男', '女'] },
       { id: 'f1-birth', title: '生年月日', type: 'date', value: '' },
       { id: 'f1-phone', title: '携帯電話', type: 'text', value: '', placeholder: '090-0000-0000' },
-      { id: 'f1-address', title: 'ご住所', type: 'text', value: '', placeholder: '〒' },
+      { id: 'f1-address', title: 'ご住所', type: 'address_group', value: { region: '日本', zip: '', address: '', building: '' } },
       { id: 'f1-email', title: 'メールアドレス', type: 'text', value: '', placeholder: 'example@email.com' },
       { id: 'f1-relation', title: '借主との関係', type: 'select', value: '', options: ['本人(借主)', '夫', '妻', '子供', '親', '兄弟', '親戚', '上司・同僚', '代理人', '友人', '社宅担当者', '社宅代行業者', '法人入居者', 'その他'] },
       { id: 'f1-relation-other', title: 'その他の関係詳細', type: 'text', value: '', placeholder: '具体的な関係をご記入ください' },
@@ -129,7 +145,7 @@ const initialData: Phase[] = [
       { id: 'f1-car-type-other', title: 'その他の車種詳細', type: 'text', value: '', placeholder: '具体的な車種を入力してください' },
       { id: 'f1-bicycle-needed', title: '駐輪場利用 (自転車・バイク)', type: 'select', value: '', options: ['不要', '要'] },
       { id: 'f1-bicycle-type', title: '駐輪タイプ', type: 'checkbox_group', value: [], options: ['自転車', '原付(50cc)', 'バイク(中型以上)'] },
-      { id: 'f1-special', title: '特別条件', type: 'checkbox_group', value: [], options: ['犬', '猫', '楽器', '短期契約', '学校区', '对面K', 'エアコン', '2阶以上', '都市ガス', '高层阶', 'AL', 'テナント居抜き'] },
+      { id: 'f1-special', title: '特別条件', type: 'checkbox_group', value: [], options: ['犬', '猫', '楽器', '短期契約', '学校区', '対面キッチン', 'エアコン', '2階以上', '都市ガス', '高層階', 'オートロック', 'テナント居抜き'] },
       { id: 'f1-pet-dog-detail', title: '犬の飼育詳細 (頭数・犬種)', type: 'text', value: '', placeholder: '例: 1頭 / トイプードル' },
       { id: 'f1-pet-cat-detail', title: '猫の飼育詳細 (頭数・種類)', type: 'text', value: '', placeholder: '例: 2匹 / アメリカンショートヘア' },
       { id: 'f1-timing', title: '引越時期', type: 'date', value: '', placeholder: '' },
@@ -360,12 +376,16 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameVal, setEditingNameVal] = useState('');
+  const [saveFeedback, setSaveFeedback] = useState<string>('');
 
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     '01-問合せ中案件': true,
     '02-申込中物件': true,
     '03-契約済み物件': true,
     '04-未成約の歴史アーカイブ': false,
+    '05-成約済みの歴史アーカイブ': false,
   });
 
   const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({
@@ -376,6 +396,10 @@ export default function App() {
     'phase-5': false,
     'phase-6': false,
   });
+
+  useEffect(() => {
+    setIsEditingName(false);
+  }, [selectedId]);
 
   // Modal states
   const [modalConfig, setModalConfig] = useState<{
@@ -422,7 +446,11 @@ export default function App() {
       return;
     }
 
-    const q = query(collection(db, 'checklists'), orderBy('updatedAt', 'desc'));
+    const q = query(
+      collection(db, 'checklists'), 
+      where('createdBy', '==', user.uid),
+      orderBy('updatedAt', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -473,8 +501,7 @@ export default function App() {
         setSelectedId(null);
       }
     }, (error) => {
-      console.error("Snapshot error:", error);
-      showAlert('読み込みエラー', 'データの取得に失敗しました: ' + error.message);
+      handleFirestoreError(error, OperationType.LIST, 'checklists');
     });
 
     return () => unsubscribe();
@@ -498,8 +525,7 @@ export default function App() {
       setSelectedId(newRef.id);
       setIsSidebarOpen(false); // Close sidebar on mobile after adding
     } catch (error) {
-      console.error("Add customer error:", error);
-      showAlert('エラー', '追加に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+      handleFirestoreError(error, OperationType.CREATE, 'checklists');
     }
   };
 
@@ -513,8 +539,7 @@ export default function App() {
           updatedAt: serverTimestamp()
         });
       } catch (error) {
-        console.error("Archive customer error:", error);
-        showAlert('エラー', `${actionName}に失敗しました: ` + (error instanceof Error ? error.message : String(error)));
+        handleFirestoreError(error, OperationType.UPDATE, `checklists/${id}`);
       }
     });
   };
@@ -525,10 +550,22 @@ export default function App() {
         await deleteDoc(doc(db, 'checklists', id));
         if (selectedId === id) setSelectedId(null);
       } catch (error) {
-        console.error("Delete customer error:", error);
-        showAlert('エラー', '削除に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+        handleFirestoreError(error, OperationType.DELETE, `checklists/${id}`);
       }
     });
+  };
+
+  const handleSaveCustomerName = async (id: string, name: string) => {
+    if (!name.trim()) return;
+    try {
+      await updateDoc(doc(db, 'checklists', id), {
+        customerName: name.trim(),
+        updatedAt: serverTimestamp()
+      });
+      setIsEditingName(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `checklists/${id}`);
+    }
   };
 
   const updatePhases = async (id: string, newPhases: Phase[]) => {
@@ -538,15 +575,21 @@ export default function App() {
         updatedAt: serverTimestamp()
       });
     } catch (error) {
-      console.error("Update phases error:", error);
-      showAlert('エラー', '更新に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+      handleFirestoreError(error, OperationType.UPDATE, `checklists/${id}`);
     }
   };
 
   const selectedChecklist = checklists.find(c => c.id === selectedId);
 
+  const allPhasesComplete = selectedChecklist
+    ? selectedChecklist.phases.every((p: Phase) => p.tasks.length === 0 || p.tasks.every((t: Task) => t.completed))
+    : false;
+
   const getCategory = (checklist: any) => {
-    if (checklist.status === 'archived') return '04-未成約の歴史アーカイブ';
+    if (checklist.status === 'archived') {
+      const allPhasesCompleteForCheck = checklist.phases.every((p: Phase) => p.tasks.length === 0 || p.tasks.every((t: Task) => t.completed));
+      return allPhasesCompleteForCheck ? '05-成約済みの歴史アーカイブ' : '04-未成約の歴史アーカイブ';
+    }
     
     const firstIncompletePhaseIndex = checklist.phases.findIndex((p: Phase) => !p.tasks.every(t => t.completed));
     
@@ -556,7 +599,13 @@ export default function App() {
     return '03-契約済み物件';
   };
 
-  const categories = ['01-問合せ中案件', '02-申込中物件', '03-契約済み物件', '04-未成約の歴史アーカイブ'];
+  const categories = [
+    '01-問合せ中案件',
+    '02-申込中物件',
+    '03-契約済み物件',
+    '04-未成約の歴史アーカイブ',
+    '05-成約済みの歴史アーカイブ'
+  ];
   const groupedChecklists = categories.reduce((acc, cat) => {
     acc[cat] = checklists.filter(c => getCategory(c) === cat);
     return acc;
@@ -622,9 +671,15 @@ export default function App() {
     const task = phase?.tasks.find((t: Task) => t.id === taskId);
     if (!task || !task.data || !task.data.properties) return;
 
-    const newProperties = task.data.properties.map((prop: any) => 
-      prop.id === propertyId ? { ...prop, [field]: value } : prop
-    );
+    const newProperties = task.data.properties.map((prop: any) => {
+      if (prop.id === propertyId) {
+        return { ...prop, [field]: value };
+      }
+      if (field === 'isFinalSelected' && value === true) {
+        return { ...prop, isFinalSelected: false };
+      }
+      return prop;
+    });
     
     handleTaskDataChange(phaseId, taskId, { ...task.data, properties: newProperties });
   };
@@ -677,6 +732,19 @@ export default function App() {
     handleTaskDataChange(phaseId, taskId, { ...task.data, viewings: newViewings });
   };
 
+  const handleUpdateViewingMultiple = (phaseId: string, taskId: string, viewingId: string, updates: Record<string, any>) => {
+    if (!selectedChecklist) return;
+    const phase = selectedChecklist.phases.find((p: Phase) => p.id === phaseId);
+    const task = phase?.tasks.find((t: Task) => t.id === taskId);
+    if (!task || !task.data || !task.data.viewings) return;
+
+    const newViewings = task.data.viewings.map((v: any) => 
+      v.id === viewingId ? { ...v, ...updates } : v
+    );
+    
+    handleTaskDataChange(phaseId, taskId, { ...task.data, viewings: newViewings });
+  };
+
   const handleDeleteViewing = (phaseId: string, taskId: string, viewingId: string) => {
     if (!selectedChecklist) return;
     const phase = selectedChecklist.phases.find((p: Phase) => p.id === phaseId);
@@ -689,13 +757,13 @@ export default function App() {
 
   const getAvailableProperties = () => {
     if (!selectedChecklist) return [];
-    const props: { name: string, room: string }[] = [];
+    const props: { name: string, room: string, isFinalSelected?: boolean }[] = [];
     
     const p2 = selectedChecklist.phases.find((p: Phase) => p.id === 'phase-2');
     const t2_2 = p2?.tasks.find((t: Task) => t.id === 't2-2');
     if (t2_2?.data?.properties) {
       t2_2.data.properties.forEach((p: any) => {
-        if (p.propertyName) props.push({ name: p.propertyName, room: p.roomNumber || '' });
+        if (p.apartmentName) props.push({ name: p.apartmentName, room: p.roomNumber || '', isFinalSelected: !!p.isFinalSelected });
       });
     }
 
@@ -705,12 +773,1180 @@ export default function App() {
       t3_1.data.viewings.forEach((v: any) => {
         if (v.propertyName) {
           if (!props.some(existing => existing.name === v.propertyName && existing.room === v.roomNumber)) {
-            props.push({ name: v.propertyName, room: v.roomNumber || '' });
+            props.push({ name: v.propertyName, room: v.roomNumber || '', isFinalSelected: false });
           }
         }
       });
     }
     return props;
+  };
+
+  const parseAmount = (val: any): number => {
+    if (val === undefined || val === null) return 0;
+    const str = val.toString();
+    const cleaned = str.replace(/[^\d.]/g, '');
+    const num = parseFloat(cleaned);
+    if (isNaN(num)) return 0;
+    if (str.includes('万')) {
+      return num * 10000;
+    }
+    return num;
+  };
+
+  const formatYen = (num: number): string => {
+    return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(num);
+  };
+
+  const getApprovedProperty = () => {
+    if (!selectedChecklist) return null;
+    const p4 = selectedChecklist.phases.find((p: Phase) => p.id === 'phase-4');
+    const t4_1 = p4?.tasks.find((t: Task) => t.id === 't4-1');
+    const approvedApp = t4_1?.data?.applications?.find((app: any) => app.screeningStatus === '審査通過');
+    if (!approvedApp) return null;
+
+    const p2 = selectedChecklist.phases.find((p: Phase) => p.id === 'phase-2');
+    const t2_2 = p2?.tasks.find((t: Task) => t.id === 't2-2');
+    const matchedProp = t2_2?.data?.properties?.find(
+      (prop: any) => prop.apartmentName === approvedApp.propertyName && prop.roomNumber === approvedApp.roomNumber
+    );
+
+    return {
+      propertyName: approvedApp.propertyName || '物件未設定',
+      roomNumber: approvedApp.roomNumber || '',
+      details: matchedProp || null
+    };
+  };
+
+  const handleUpdateTaskField = (phaseId: string, taskId: string, field: string, value: any) => {
+    if (!selectedChecklist) return;
+    const phase = selectedChecklist.phases.find((p: Phase) => p.id === phaseId);
+    const task = phase?.tasks.find((t: Task) => t.id === taskId);
+    const currentData = task?.data || {};
+    handleTaskDataChange(phaseId, taskId, {
+      ...currentData,
+      [field]: value
+    });
+  };
+
+  const renderTaskDetail = (phase: Phase, task: Task) => {
+    const cleanNum = (val: any): string => {
+      if (val === undefined || val === null || val === '') return '';
+      const cleaned = String(val).replace(/[^\d]/g, '');
+      if (!cleaned) return '';
+      const num = parseInt(cleaned, 10);
+      return isNaN(num) ? '' : num.toLocaleString('ja-JP');
+    };
+
+    const renderCurrencyInput = (label: string, value: any, onChange: (val: string) => void, placeholder?: string) => {
+      return (
+        <div className="flex flex-col">
+          <label className="text-[11px] font-medium text-slate-500 mb-1">{label}</label>
+          <div className="relative flex items-center bg-white border border-slate-300 rounded focus-within:ring-1 focus-within:ring-prestige-gold focus-within:border-prestige-gold transition-shadow">
+            <span className="text-slate-400 pl-2 text-xs font-semibold select-none">¥</span>
+            <CompositionInput 
+              type="text" 
+              className="w-full border-0 p-2 text-xs text-right font-medium focus:ring-0 outline-none pr-1.5 bg-transparent text-slate-700" 
+              value={cleanNum(value)} 
+              placeholder={placeholder}
+              onChange={(val) => onChange(val.replace(/[^\d]/g, ''))} 
+            />
+            <span className="text-slate-400 text-[10px] pr-2 select-none font-medium">円</span>
+          </div>
+        </div>
+      );
+    };
+
+    if (task.id === 't5-1') {
+      const approved = getApprovedProperty();
+      if (!approved) {
+        return (
+          <div className="mt-3 space-y-4 text-xs text-slate-500">
+            <p>{task.description}</p>
+            <p className="text-amber-600 bg-amber-50 p-2.5 border border-amber-200 rounded font-medium">
+              ※ 審査通過した物件が現在登録されていないため、初期費用明細の作成を行えません。「4. 申込・審査」フェーズにて物件の審査状況を「審査通過」に設定してください。
+            </p>
+          </div>
+        );
+      }
+
+      // Calculate typical fees
+      const details = approved.details;
+      const baseRent = parseAmount(details?.monthlyRent);
+      const baseFee = parseAmount(details?.managementFee);
+      const baseDeposit = parseAmount(details?.securityDeposit);
+      const baseKeyMoney = parseAmount(details?.keyMoney);
+      const baseParking = parseAmount(details?.parkingFee);
+      const baseNeighborhood = parseAmount(details?.neighborhoodFee);
+
+      // Custom adjustments from task database
+      const tData = task.data || {};
+      const rent = tData.rent !== undefined ? tData.rent : String(baseRent);
+      const managementFee = tData.managementFee !== undefined ? tData.managementFee : String(baseFee);
+      const securityDeposit = tData.securityDeposit !== undefined ? tData.securityDeposit : String(baseDeposit);
+      const keyMoney = tData.keyMoney !== undefined ? tData.keyMoney : String(baseKeyMoney);
+      const proratedRent = tData.proratedRent !== undefined ? tData.proratedRent : '0';
+      const proratedFee = tData.proratedFee !== undefined ? tData.proratedFee : '0';
+      const parkingFee = tData.parkingFee !== undefined ? tData.parkingFee : String(baseParking);
+      const proratedParkingFee = tData.proratedParkingFee !== undefined ? tData.proratedParkingFee : '0';
+      const agencyFee = tData.agencyFee !== undefined ? tData.agencyFee : String(Math.round(baseRent * 1.1));
+      
+      const guarantorCompany = tData.guarantorCompany || '日本セーフティ';
+      const firstGuarantorFee = tData.firstGuarantorFee !== undefined ? tData.firstGuarantorFee : (tData.guarantorFee !== undefined ? tData.guarantorFee : String(Math.round(baseRent * 0.5)));
+      const monthlyGuarantorFee = tData.monthlyGuarantorFee !== undefined ? tData.monthlyGuarantorFee : '800';
+      const guarantorPaymentFee = tData.guarantorPaymentFee !== undefined ? tData.guarantorPaymentFee : '330';
+      
+      const insuranceFee = tData.insuranceFee !== undefined ? tData.insuranceFee : '20000';
+      const includeInsurance = tData.includeInsurance !== undefined ? !!tData.includeInsurance : true;
+      
+      const keyExchangeFee = tData.keyExchangeFee !== undefined ? tData.keyExchangeFee : '22000';
+      const disinfectionFee = tData.disinfectionFee !== undefined ? tData.disinfectionFee : '16500';
+      const supportFee = tData.supportFee !== undefined ? tData.supportFee : '16500';
+      const neighborhoodFee = tData.neighborhoodFee !== undefined ? tData.neighborhoodFee : String(baseNeighborhood);
+      const cleaningFee = tData.cleaningFee !== undefined ? tData.cleaningFee : '44000';
+      const otherFee = tData.otherFee !== undefined ? tData.otherFee : '0';
+
+      const totalSum = parseAmount(rent) + 
+                       parseAmount(managementFee) + 
+                       parseAmount(securityDeposit) + 
+                       parseAmount(keyMoney) + 
+                       parseAmount(proratedRent) + 
+                       parseAmount(proratedFee) + 
+                       parseAmount(parkingFee) + 
+                       parseAmount(proratedParkingFee) + 
+                       parseAmount(agencyFee) +
+                       parseAmount(firstGuarantorFee) + 
+                       (includeInsurance ? parseAmount(insuranceFee) : 0) + 
+                       parseAmount(keyExchangeFee) + 
+                       parseAmount(disinfectionFee) + 
+                       parseAmount(supportFee) + 
+                       parseAmount(neighborhoodFee) + 
+                       parseAmount(cleaningFee) + 
+                       parseAmount(otherFee);
+      const totalAdjusted = tData.totalAdjusted !== undefined ? tData.totalAdjusted : String(totalSum);
+
+      const handleExportExpenseCalc = () => {
+        const propName = approved?.propertyName || "";
+        const roomNum = approved?.roomNumber || "";
+        const locationVal = approved?.details?.location || "";
+
+        const items = [
+          { label: "家賃 (月額)", amount: parseAmount(rent), remarks: "", isMonthly: false },
+          { label: "管理費・共益費 (月額)", amount: parseAmount(managementFee), remarks: "", isMonthly: false },
+          { label: "敷金", amount: parseAmount(securityDeposit), remarks: "", isMonthly: false },
+          { label: "礼金", amount: parseAmount(keyMoney), remarks: "", isMonthly: false },
+          { label: "(日割) 家賃", amount: parseAmount(proratedRent), remarks: "", isMonthly: false },
+          { label: "(日割) 共益費", amount: parseAmount(proratedFee), remarks: "", isMonthly: false },
+          { label: "駐車場代 (月額)", amount: parseAmount(parkingFee), remarks: "", isMonthly: false },
+          { label: "(日割) 駐車場代", amount: parseAmount(proratedParkingFee), remarks: "", isMonthly: false },
+          { label: "仲介手数料 (税込)", amount: parseAmount(agencyFee), remarks: "", isMonthly: false },
+          { label: `初回保証委託料 (${guarantorCompany})`, amount: parseAmount(firstGuarantorFee), remarks: "", isMonthly: false },
+          { label: "月額保証料", amount: parseAmount(monthlyGuarantorFee), remarks: "（毎月固定）", isMonthly: true },
+          { label: "保証会社支払手数料", amount: parseAmount(guarantorPaymentFee), remarks: "（毎月固定）", isMonthly: true },
+          { 
+            label: "火災保険料", 
+            amount: parseAmount(insuranceFee), 
+            remarks: includeInsurance ? "" : "（※別途直接契約・自主加入のため初期費用合計から除外）", 
+            isMonthly: false, 
+            isExcluded: !includeInsurance 
+          },
+          { label: "鍵交換代", amount: parseAmount(keyExchangeFee), remarks: "", isMonthly: false },
+          { label: "除菌消臭・室内消毒施工代", amount: parseAmount(disinfectionFee), remarks: "", isMonthly: false },
+          { label: "24時間安心サポート料", amount: parseAmount(supportFee), remarks: "", isMonthly: false },
+          { label: "町内会費", amount: parseAmount(neighborhoodFee), remarks: "", isMonthly: false },
+          { label: "清傷費", amount: parseAmount(cleaningFee), remarks: "", isMonthly: false },
+          { label: "その他経費", amount: parseAmount(otherFee), remarks: "", isMonthly: false },
+        ];
+
+        const custName = selectedChecklist.customerName || "";
+        const dataAOA: any[][] = [
+          ["", "", "", "", ""],
+          ["", "ー  初期費用明細書  ー", "", "", ""],
+          ["", "", "", "", `発行日 : ${new Date().toISOString().split('T')[0]}`],
+          [`${custName}  様契約`],
+          ["物件名", propName || "", "", "部屋番号", roomNum ? `${roomNum}号室` : ""],
+          ["所在地", locationVal || "", "", "", ""],
+          ["", "", "", "", ""],
+          ["項目", "金額", "備考", "", ""],
+        ];
+
+        let totalTable = 0;
+        items.forEach(it => {
+          if (it.amount > 0) {
+            dataAOA.push([
+              it.label,
+              it.isExcluded ? `自主加入（除外: ${it.amount.toLocaleString()} 円）` : `${it.amount.toLocaleString()} 円`,
+              it.remarks
+            ]);
+            if (!it.isMonthly && !it.isExcluded) {
+              totalTable += it.amount;
+            }
+          }
+        });
+
+        dataAOA.push(
+          ["", "", ""],
+          ["契約金合計 (概算)", `${totalTable.toLocaleString()} 円`, "※上記合計金額は概算です。"],
+          ["調整済ご請求総額", `${parseAmount(totalAdjusted).toLocaleString()} 円`, "※確定初期費用額"],
+          ["", "", ""],
+          ["【月額定期費用（翌月以降、毎月のお支払い）】", "", ""],
+          ["月額保証料 (毎月)", `${parseAmount(monthlyGuarantorFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"],
+          ["保証会社支払手数料 (毎月)", `${parseAmount(guarantorPaymentFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"]
+        );
+
+        if (parseAmount(parkingFee) > 0) {
+          dataAOA.push(["駐車場代 (毎月)", `${parseAmount(parkingFee).toLocaleString()} 円`, "※お家賃等とあわせて引落し"]);
+        }
+
+        dataAOA.push(
+          ["", "", ""],
+          ["< お振込先案内 >", "", ""],
+          ["銀行名", "北洋銀行 札幌駅前支店", ""],
+          ["口座種別", "普通預金 1234567", ""],
+          ["口座名義", "カ）アンビシャス 営業口", ""],
+          ["※ 振込手数料はお客様負担となります。", "", ""]
+        );
+
+        const worksheet = XLSX.utils.aoa_to_sheet(dataAOA);
+        worksheet['!cols'] = [
+          { wch: 35 }, // Col A
+          { wch: 20 }, // Col B
+          { wch: 45 }, // Col C
+        ];
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "費用明細書");
+        XLSX.writeFile(workbook, `${custName}様_初期費用明細書.xlsx`);
+      };
+
+      if (task.completed) {
+        return (
+          <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-50 p-5 border border-slate-200 rounded-lg space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h6 className="text-[10px] font-display font-bold text-prestige-gold tracking-widest uppercase">費用明細ステータス</h6>
+                    <div className="flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold rounded">
+                      <Archive className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-[9px] font-display tracking-widest uppercase">完了・アーカイブ済</span>
+                    </div>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 tracking-tight mt-1">
+                    初期費用明細書（物件: {approved.propertyName}）
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleTask(phase.id, task.id)}
+                  className="px-4 py-1.5 border border-luxury-border text-slate-700 hover:bg-slate-100 transition-all text-xs font-bold tracking-widest uppercase cursor-pointer rounded bg-white shadow-sm font-medium"
+                >
+                  編集する
+                </button>
+              </div>
+
+              {/* Quick totals summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white p-3.5 border border-slate-100 rounded shadow-sm">
+                  <span className="text-slate-400 text-[10px] block font-medium">調整済すご請求総額（確定初期費用）</span>
+                  <span className="text-lg font-bold text-prestige-gold tracking-wide">
+                    ¥{parseAmount(totalAdjusted).toLocaleString()} 円
+                  </span>
+                </div>
+                <div className="bg-white p-3.5 border border-slate-100 rounded shadow-sm">
+                  <span className="text-slate-400 text-[10px] block font-medium">初期費用単純合計（概算）</span>
+                  <span className="text-slate-600 text-sm font-bold">
+                    ¥{totalSum.toLocaleString()} 円
+                  </span>
+                </div>
+              </div>
+
+              {/* Items listing */}
+              <div className="bg-white p-4 border border-slate-100 rounded space-y-2">
+                <p className="text-[10px] font-bold text-slate-500 tracking-wider uppercase border-b pb-1.5">【初期費用明細内訳】</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs text-slate-600">
+                  {parseAmount(rent) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">家賃 (月額):</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(rent).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(managementFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">管理費・共益費 (月額):</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(managementFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(securityDeposit) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">敷金:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(securityDeposit).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(keyMoney) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">礼金:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(keyMoney).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(proratedRent) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">(日割) 家賃:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(proratedRent).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(proratedFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">(日割) 共益費:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(proratedFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(parkingFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium font-bold text-prestige-gold">駐車場代 (月額):</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(parkingFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(proratedParkingFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">(日割) 駐車場代:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(proratedParkingFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(agencyFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">仲介手数料 (税込):</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(agencyFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(firstGuarantorFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">初回保証委託料 ({guarantorCompany}):</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(firstGuarantorFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(insuranceFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">火災保険料:</span>
+                      <span className="font-semibold text-slate-800">
+                        {includeInsurance ? `¥${parseAmount(insuranceFee).toLocaleString()} 円` : `自主加入（除外: ¥${parseAmount(insuranceFee).toLocaleString()} 円）`}
+                      </span>
+                    </div>
+                  )}
+                  {parseAmount(keyExchangeFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">鍵交換代:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(keyExchangeFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(disinfectionFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">除菌消臭・室内消毒代:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(disinfectionFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(supportFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">24時間安心サポート料:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(supportFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(neighborhoodFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">町内会費:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(neighborhoodFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(cleaningFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">清掃費:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(cleaningFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                  {parseAmount(otherFee) > 0 && (
+                    <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5">
+                      <span className="text-slate-500 font-medium">その他諸経費・雑費:</span>
+                      <span className="font-semibold text-slate-800">¥{parseAmount(otherFee).toLocaleString()} 円</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Monthly recurring charges preview */}
+              <div className="bg-amber-50/40 p-4 border border-amber-200/40 rounded-lg space-y-1 text-slate-600">
+                <p className="font-bold text-slate-700 text-[10px] tracking-wider uppercase flex items-center gap-1.5 border-b border-amber-200/25 pb-1 mb-1.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold"></span>
+                  <span>月額定期費用（翌月以降、毎月のお支払い）</span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="flex justify-between border-r border-amber-200/10 pr-2">
+                    <span className="text-slate-500">月額保証料:</span>
+                    <span className="font-bold text-slate-800">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円/月</span>
+                  </div>
+                  <div className="flex justify-between border-r border-amber-200/10 pr-2">
+                    <span className="text-slate-500">保証会社支払手数料:</span>
+                    <span className="font-bold text-slate-800">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円/月</span>
+                  </div>
+                  {parseAmount(parkingFee) > 0 && (
+                    <div className="flex justify-between text-prestige-gold">
+                      <span>駐車場代 (毎月):</span>
+                      <span className="font-bold">¥{parseAmount(parkingFee).toLocaleString()} 円/月</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between bg-white border border-slate-200 p-3.5 rounded-lg">
+                <div className="flex items-center space-x-2.5">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                  <div>
+                    <p className="font-bold text-slate-800">費用明細 Excel 出力</p>
+                    <p className="text-[10px] text-slate-400">作成した費用明細シートをExcel形式でダウンロードします</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportExpenseCalc}
+                  className="flex items-center space-x-1.5 px-4 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded hover:bg-emerald-100 transition-all font-bold text-xs shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>明細書出力</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+          <p className="sm:text-sm text-slate-500 leading-relaxed">{task.description}</p>
+          
+          <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg space-y-4">
+            <p className="text-xs font-bold text-slate-800 flex items-center space-x-1.5 border-b pb-2">
+              <FileSpreadsheet className="w-4 h-4 text-prestige-gold" />
+              <span>初期費用明細の編集・計算（契約物件：{approved.propertyName}）</span>
+            </p>
+            
+            <div className="space-y-4 text-xs">
+              {/* Category 1: Base Prorated Rent & Contract Costs */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-700 bg-slate-200/50 px-2 py-1 rounded">1. 契約金・基本/日割賃料等</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {renderCurrencyInput("家賃 (月額)", rent, (val) => handleUpdateTaskField(phase.id, task.id, 'rent', val))}
+                  {renderCurrencyInput("管理費・共益費 (月額)", managementFee, (val) => handleUpdateTaskField(phase.id, task.id, 'managementFee', val))}
+                  {renderCurrencyInput("敷金", securityDeposit, (val) => handleUpdateTaskField(phase.id, task.id, 'securityDeposit', val))}
+                  {renderCurrencyInput("礼金", keyMoney, (val) => handleUpdateTaskField(phase.id, task.id, 'keyMoney', val))}
+                  {renderCurrencyInput("(日割) 家賃", proratedRent, (val) => handleUpdateTaskField(phase.id, task.id, 'proratedRent', val), "例: 23500")}
+                  {renderCurrencyInput("(日割) 共益費", proratedFee, (val) => handleUpdateTaskField(phase.id, task.id, 'proratedFee', val), "例: 1500")}
+                  {renderCurrencyInput("駐車場代 (月額)", parkingFee, (val) => handleUpdateTaskField(phase.id, task.id, 'parkingFee', val))}
+                  {renderCurrencyInput("(日割) 駐車場代", proratedParkingFee, (val) => handleUpdateTaskField(phase.id, task.id, 'proratedParkingFee', val), "例: 5000")}
+                </div>
+              </div>
+              
+              {/* Category 2: Guarantor & Agency Fees */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-700 bg-slate-200/50 px-2 py-1 rounded">2. 保証会社・仲介委託関連</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col">
+                    <label className="text-[11px] font-medium text-slate-500 mb-1">保証会社</label>
+                    <select 
+                      className="w-full border border-slate-300 p-2 rounded text-xs bg-white outline-none focus:ring-1 focus:ring-prestige-gold focus:border-prestige-gold h-[34px] font-medium text-slate-700"
+                      value={guarantorCompany} 
+                      onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'guarantorCompany', e.target.value)} 
+                    >
+                      <option value="日本セーフティ">日本セーフティ (Safety)</option>
+                      <option value="オリコフォレントインシュア">オリコフォレントインシュア (Orico)</option>
+                      <option value="全保連">全保連 (Zenhoruren)</option>
+                      <option value="ジェイエーシーシー">JACCS</option>
+                      <option value="エポスカード">エポスカード (Epos)</option>
+                      <option value="JID">JID (日本賃貸保証)</option>
+                      <option value="Casa">Casa (カーサ)</option>
+                      <option value="その他">その他</option>
+                      <option value="なし">なし</option>
+                    </select>
+                  </div>
+                  {renderCurrencyInput("初回保証委託料", firstGuarantorFee, (val) => handleUpdateTaskField(phase.id, task.id, 'firstGuarantorFee', val))}
+                  {renderCurrencyInput("月額保証料", monthlyGuarantorFee, (val) => handleUpdateTaskField(phase.id, task.id, 'monthlyGuarantorFee', val))}
+                  {renderCurrencyInput("保証会社支払手数料", guarantorPaymentFee, (val) => handleUpdateTaskField(phase.id, task.id, 'guarantorPaymentFee', val))}
+                  <div className="col-span-2 text-xs">
+                    {renderCurrencyInput("仲介手数料 (税込)", agencyFee, (val) => handleUpdateTaskField(phase.id, task.id, 'agencyFee', val))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Category 3: Itemized Incidental Fees */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-700 bg-slate-200/50 px-2 py-1 rounded">3. 諸経費・付帯オプション</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Fire Insurance with inclusion checkbox */}
+                  <div className="flex flex-col">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-medium text-slate-500">火災保険料</label>
+                      <label className="inline-flex items-center space-x-1 cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-slate-300 text-prestige-gold focus:ring-prestige-gold w-3 h-3 cursor-pointer"
+                          checked={includeInsurance}
+                          onChange={() => handleUpdateTaskField(phase.id, task.id, 'includeInsurance', !includeInsurance)}
+                        />
+                        <span className="text-[10px] font-bold text-slate-600">初期費用に含める</span>
+                      </label>
+                    </div>
+                    <div className={`relative flex items-center bg-white border rounded focus-within:ring-1 focus-within:ring-prestige-gold focus-within:border-prestige-gold transition-shadow ${includeInsurance ? 'border-slate-300' : 'border-slate-200 bg-slate-50/50 grayscale-[30%]'}`}>
+                      <span className="text-slate-400 pl-2 text-xs font-semibold select-none">¥</span>
+                      <CompositionInput 
+                        type="text" 
+                        className={`w-full border-0 p-2 text-xs text-right font-medium focus:ring-0 outline-none pr-1.5 bg-transparent ${includeInsurance ? 'text-slate-700' : 'text-slate-400 italic font-normal'}`} 
+                        value={cleanNum(insuranceFee)} 
+                        onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'insuranceFee', val.replace(/[^\d]/g, ''))} 
+                      />
+                      <span className="text-slate-400 text-[10px] pr-2 select-none font-medium">円</span>
+                    </div>
+                  </div>
+                  {renderCurrencyInput("鍵交換代", keyExchangeFee, (val) => handleUpdateTaskField(phase.id, task.id, 'keyExchangeFee', val))}
+                  {renderCurrencyInput("除菌消臭・室内消毒施工代", disinfectionFee, (val) => handleUpdateTaskField(phase.id, task.id, 'disinfectionFee', val))}
+                  {renderCurrencyInput("24時間安心サポート料", supportFee, (val) => handleUpdateTaskField(phase.id, task.id, 'supportFee', val))}
+                  {renderCurrencyInput("町内会費", neighborhoodFee, (val) => handleUpdateTaskField(phase.id, task.id, 'neighborhoodFee', val))}
+                  {renderCurrencyInput("清掃費", cleaningFee, (val) => handleUpdateTaskField(phase.id, task.id, 'cleaningFee', val))}
+                  <div className="col-span-2">
+                    {renderCurrencyInput("その他諸経費・雑費 (合計)", otherFee, (val) => handleUpdateTaskField(phase.id, task.id, 'otherFee', val))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column Total Override and Auto-Calculate click block */}
+              <div className="pt-3 border-t border-slate-200">
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    {renderCurrencyInput("請求先初期費用概算合計 (税込)", totalAdjusted, (val) => handleUpdateTaskField(phase.id, task.id, 'totalAdjusted', val))}
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const calculatedTotal = parseAmount(rent) + 
+                                              parseAmount(managementFee) + 
+                                              parseAmount(securityDeposit) + 
+                                              parseAmount(keyMoney) + 
+                                              parseAmount(proratedRent) + 
+                                              parseAmount(proratedFee) + 
+                                              parseAmount(parkingFee) + 
+                                              parseAmount(proratedParkingFee) + 
+                                              parseAmount(agencyFee) +
+                                              parseAmount(firstGuarantorFee) + 
+                                              (includeInsurance ? parseAmount(insuranceFee) : 0) + 
+                                              parseAmount(keyExchangeFee) + 
+                                              parseAmount(disinfectionFee) + 
+                                              parseAmount(supportFee) + 
+                                              parseAmount(neighborhoodFee) + 
+                                              parseAmount(cleaningFee) + 
+                                              parseAmount(otherFee);
+                      handleUpdateTaskField(phase.id, task.id, 'totalAdjusted', String(calculatedTotal));
+                    }}
+                    className="px-4 py-2 border border-prestige-gold/30 bg-prestige-gold/10 hover:bg-prestige-gold hover:text-white text-prestige-gold font-bold transition-all rounded text-xs select-none shadow-sm flex items-center justify-center cursor-pointer min-w-[100px] h-[34px]"
+                  >
+                    自動計算
+                  </button>
+                </div>
+
+                {/* Separately display monthly charges below */}
+                <div className="mt-3 p-3 bg-amber-50/50 border border-amber-200/50 rounded-lg space-y-1.5 text-slate-600 font-sans">
+                  <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-prestige-gold"></span>
+                    <span>月額定期費用（翌月以降、毎月のお支払い）</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                      <span className="text-slate-500 font-medium">月額保証料:</span>
+                      <span className="font-bold text-slate-800">¥{parseAmount(monthlyGuarantorFee).toLocaleString()} 円 / 月</span>
+                    </div>
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                      <span className="text-slate-500 font-medium">保証会社支払手数料:</span>
+                      <span className="font-bold text-slate-800">¥{parseAmount(guarantorPaymentFee).toLocaleString()} 円 / 月</span>
+                    </div>
+                    {parseAmount(parkingFee) > 0 && (
+                      <div className="flex justify-between border-b border-dashed border-slate-200 pb-1 col-span-2">
+                        <span className="text-slate-500 font-medium font-bold text-prestige-gold">駐車場代 (毎月):</span>
+                        <span className="font-bold text-slate-800">¥{parseAmount(parkingFee).toLocaleString()} 円 / 月</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium mt-1">※ 月額保証料およびお支払手数料は、契約時の初期請求合計額には含まれません。</p>
+                </div>
+              </div>
+
+              {/* Action buttons with Save feedback */}
+              <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <span className="text-[10px] text-slate-400 font-medium font-sans">
+                  ※ 入力内容は自動的・リアルタイムに保存されます。
+                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSaveFeedback('t5-1');
+                      setTimeout(() => setSaveFeedback(''), 2000);
+                    }}
+                    className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold transition-all rounded text-xs select-none shadow-sm flex items-center justify-center cursor-pointer min-w-[90px] h-[34px]"
+                  >
+                    {saveFeedback === 't5-1' ? (
+                      <span className="text-emerald-600 flex items-center space-x-1 animate-pulse">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>保存完了</span>
+                      </span>
+                    ) : (
+                      <span>保存する</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleTask(phase.id, task.id);
+                    }}
+                    className="px-5 py-2 bg-prestige-gold hover:bg-prestige-gold/90 text-white font-bold transition-all rounded text-xs cursor-pointer shadow-sm flex items-center space-x-1.5 h-[34px]"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>完成入力・アーカイブ</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-white border border-slate-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-slate-800">費用明細 Excel テンプレート</p>
+                <p className="text-[10px] sm:text-xs text-slate-500">入力した計算内容を反映したExcel費用明細表</p>
+              </div>
+            </div>
+            <button 
+              onClick={handleExportExpenseCalc}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-md hover:border-prestige-gold hover:text-prestige-gold transition-all text-xs font-medium shadow-sm group cursor-pointer"
+            >
+              <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+              <span>明細書出力 (Excel)</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (task.id === 't5-2') {
+      const approved = getApprovedProperty();
+      if (!approved) {
+        return (
+          <div className="mt-3 space-y-4 text-xs text-slate-500">
+            <p>{task.description}</p>
+            <p className="text-amber-600 bg-amber-50 p-2.5 border border-amber-200 rounded font-medium">
+              ※ 審査通過した物件が現在登録されていないため、重要事項説明の管理を行えません。
+            </p>
+          </div>
+        );
+      }
+
+      const tData = task.data || {};
+      const brokerName = tData.brokerName || '';
+      const explanationDate = tData.explanationDate || '';
+      const explMethod = tData.explMethod || 'IT重説 (オンライン)';
+      const signStatus = tData.signStatus || '未発送';
+      const signDate = tData.signDate || '';
+
+      if (task.completed) {
+        return (
+          <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h6 className="text-[10px] font-display font-bold text-prestige-gold tracking-widest uppercase">重説ステータス</h6>
+                    <div className="flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold rounded">
+                      <Archive className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-[9px] font-display tracking-widest uppercase">完了・アーカイブ済</span>
+                    </div>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 tracking-tight mt-1">
+                    重要事項説明 & 契約書類回収（物件: {approved.propertyName}）
+                  </h4>
+                </div>
+                <button
+                  onClick={() => toggleTask(phase.id, task.id)}
+                  className="px-4 py-1.5 border border-luxury-border text-slate-700 hover:bg-slate-100 transition-all text-xs font-bold tracking-widest uppercase cursor-pointer rounded bg-white shadow-sm font-medium"
+                >
+                  編集する
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-xs pt-3 text-slate-600">
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5">取引主任者 (宅建士)</span>
+                  <span className="font-bold text-slate-800">{brokerName || '未記入'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5">重説実施日時</span>
+                  <span className="font-bold text-slate-800">{explanationDate ? explanationDate.replace('T', ' ') : '未指定'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5">重説実施方法</span>
+                  <span className="font-bold text-slate-800">{explMethod}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5">契約書署名ステータス</span>
+                  <span className="font-bold text-slate-800">{signStatus}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5">書類回収日（署名完了日）</span>
+                  <span className="font-bold text-slate-800">{signDate || '未回収'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+          <p className="sm:text-sm text-slate-500 leading-relaxed">{task.description}</p>
+          
+          <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <h5 className="col-span-1 sm:col-span-2 text-xs font-bold text-slate-800 border-b pb-2 mb-1 flex items-center space-x-1.5">
+              <PenTool className="w-4 h-4 text-prestige-gold" />
+              <span>重要事項説明 & 契約書類回収状況（契約物件：{approved.propertyName}）</span>
+            </h5>
+
+            <div>
+              <label className="block text-slate-500 mb-1">取引主任者 (宅建士)</label>
+              <CompositionInput 
+                type="text" 
+                className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                placeholder="例: 山田 太郎"
+                value={brokerName} 
+                onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'brokerName', val)} 
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-500 mb-1">重説実施予定日時</label>
+              <input 
+                type="datetime-local" 
+                className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                value={explanationDate} 
+                onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'explanationDate', e.target.value)} 
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-500 mb-1">重説実施方法</label>
+              <select 
+                className="w-full border border-slate-300 p-2 rounded bg-white text-xs outline-none"
+                value={explMethod} 
+                onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'explMethod', e.target.value)} 
+              >
+                <option value="IT重説 (オンライン)">IT重説 (オンライン)</option>
+                <option value="対面面談 (店舗)">対面面談 (店舗)</option>
+                <option value="現地対面面談">現地対面面談</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-slate-500 mb-1">契約書署名ステータス</label>
+              <select 
+                className="w-full border border-slate-300 p-2 rounded bg-white text-xs outline-none"
+                value={signStatus} 
+                onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'signStatus', e.target.value)} 
+              >
+                <option value="未発送">未発送</option>
+                <option value="書類発送完了">書類発送完了 / 電子署名送信済</option>
+                <option value="署名完了・回収済">署名完了・回収済 / 締結済</option>
+              </select>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-slate-500 mb-1">書類回収日（署名完了日）</label>
+              <input 
+                type="date" 
+                className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                value={signDate} 
+                onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'signDate', e.target.value)} 
+              />
+            </div>
+
+            <div className="sm:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-slate-200 mt-2 gap-3">
+              <span className="text-[10px] text-slate-400 font-medium font-sans self-start sm:self-center">
+                ※ 入力内容は自動的・リアルタイムに保存されます。
+              </span>
+              <div className="flex flex-col items-end sm:items-center sm:flex-row gap-2 self-end">
+                {!brokerName.trim() && (
+                  <p className="text-[10px] text-amber-600 font-bold flex items-center mr-1 sm:mb-0">
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    ※ 保存、完了には宅建士名の記入が必要です。
+                  </p>
+                )}
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    disabled={!brokerName.trim()}
+                    onClick={() => {
+                      setSaveFeedback('t5-2');
+                      setTimeout(() => setSaveFeedback(''), 2000);
+                    }}
+                    className={`px-4 py-2 bg-white border font-bold transition-all rounded text-xs select-none shadow-sm flex items-center justify-center min-w-[90px] h-[34px] ${
+                      brokerName.trim() 
+                        ? 'border-slate-300 hover:bg-slate-50 text-slate-700 cursor-pointer' 
+                        : 'border-slate-200 bg-slate-50/50 text-slate-400 cursor-not-allowed shadow-none'
+                    }`}
+                  >
+                    {saveFeedback === 't5-2' ? (
+                      <span className="text-emerald-600 flex items-center space-x-1 animate-pulse">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>保存完了</span>
+                      </span>
+                    ) : (
+                      <span>保存する</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!brokerName.trim()}
+                    onClick={() => toggleTask(phase.id, task.id)}
+                    className={`px-5 py-2 font-bold transition-all rounded text-xs cursor-pointer shadow-sm flex items-center space-x-1.5 h-[34px] ${
+                      brokerName.trim() 
+                        ? 'bg-prestige-gold hover:bg-prestige-gold/90 text-white' 
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 shadow-none'
+                    }`}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>完成入力・アーカイブ</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (task.id === 't5-3') {
+      const approved = getApprovedProperty();
+      if (!approved) {
+        return (
+          <div className="mt-3 space-y-4 text-xs text-slate-500">
+            <p>{task.description}</p>
+            <p className="text-amber-600 bg-amber-50 p-2.5 border border-amber-200 rounded font-medium">
+              ※ 審査通過した物件が現在登録されていないため、契約金入金の管理を行えません。
+            </p>
+          </div>
+        );
+      }
+
+      // Lookup grand total from t5-1 if available
+      const p5 = selectedChecklist.phases.find((p: Phase) => p.id === 'phase-5');
+      const t5_1 = p5?.tasks.find((t: Task) => t.id === 't5-1');
+      const estimatedTotal = t5_1?.data?.totalAdjusted || '';
+
+      const tData = task.data || {};
+      const billAmount = tData.billAmount !== undefined ? tData.billAmount : estimatedTotal;
+      const payDeadline = tData.payDeadline || '';
+      const paymentStatus = tData.paymentStatus || '未入金';
+      const confirmedDate = tData.confirmedDate || '';
+      const accountInfo = tData.accountInfo || '北洋銀行 札幌駅前支店 普通 1234567\nカ）アンビシャス 営業口';
+
+      if (task.completed) {
+        return (
+          <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-50 p-5 border border-slate-200 rounded-lg space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h6 className="text-[10px] font-display font-bold text-prestige-gold tracking-widest uppercase">決済ステータス</h6>
+                    <div className="flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold rounded">
+                      <Archive className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-[9px] font-display tracking-widest uppercase">完了・アーカイブ済</span>
+                    </div>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 tracking-tight mt-1">
+                    初期費用・契約金の決済確認（物件: {approved.propertyName}）
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleTask(phase.id, task.id)}
+                  className="px-4 py-1.5 border border-luxury-border text-slate-700 hover:bg-slate-100 transition-all text-xs font-bold tracking-widest uppercase cursor-pointer rounded bg-white shadow-sm font-medium"
+                >
+                  編集する
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3.5 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5 uppercase tracking-wider font-semibold">請求金額 (税込)</span>
+                  <span className="font-bold text-prestige-gold text-sm tracking-wide">
+                    {billAmount ? `¥${Number(billAmount.replace(/[^\d]/g, '')).toLocaleString()} 円` : '未設定'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5 uppercase tracking-wider font-semibold">振込入金期日</span>
+                  <span className="font-bold text-slate-800">{payDeadline ? payDeadline.replace(/-/g, '/') : '未設定'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] mb-0.5 uppercase tracking-wider font-semibold">入金確認ステータス</span>
+                  <span className={`inline-block px-2.5 py-0.5 rounded font-bold text-[10px] ${
+                    paymentStatus === '入金確認・着金完了' 
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' 
+                      : 'bg-amber-50 border border-amber-200 text-amber-700'
+                  }`}>
+                    {paymentStatus}
+                  </span>
+                </div>
+                {confirmedDate && (
+                  <div>
+                    <span className="text-slate-400 block text-[10px] mb-0.5 uppercase tracking-wider font-semibold font-sans">着金確認日</span>
+                    <span className="font-bold text-slate-800">{confirmedDate.replace(/-/g, '/')}</span>
+                  </div>
+                )}
+                <div className="sm:col-span-2 md:col-span-3 bg-white p-3 border border-slate-100 rounded">
+                  <span className="text-slate-400 block text-[10px] mb-1.5 uppercase tracking-wider font-bold border-b pb-1 font-sans">送金案内口座（控え / お客様通知内容）</span>
+                  <pre className="font-mono text-[10.5px] text-slate-700 leading-relaxed whitespace-pre-wrap selection:bg-slate-200">
+                    {accountInfo || '案内口座情報なし'}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+          <p className="sm:text-sm text-slate-500 leading-relaxed">{task.description}</p>
+          
+          <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg space-y-3">
+            <h5 className="text-xs font-bold text-slate-800 border-b pb-2 flex items-center space-x-1.5">
+              <KeyRound className="w-4 h-4 text-prestige-gold" />
+              <span>初期費用・契約金の決済確認（契約物件：{approved.propertyName}）</span>
+            </h5>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-500 mb-1">請求金額 (税込)</label>
+                <div className="flex gap-2">
+                  <CompositionInput 
+                    type="text" 
+                    className="flex-1 border border-slate-300 p-2 rounded bg-white text-xs font-bold" 
+                    value={billAmount} 
+                    onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'billAmount', val)} 
+                  />
+                  {estimatedTotal && estimatedTotal !== billAmount && (
+                    <button 
+                      onClick={() => handleUpdateTaskField(phase.id, task.id, 'billAmount', estimatedTotal)}
+                      className="px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors text-[10px] shadow-sm select-none cursor-pointer"
+                      title="費用明細で設定した調整済金額をコピーします"
+                    >
+                      明細から同期
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">振込入金期日</label>
+                <input 
+                  type="date" 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                  value={payDeadline} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'payDeadline', e.target.value)} 
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">入金ステータス</label>
+                <select 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs outline-none"
+                  value={paymentStatus} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'paymentStatus', e.target.value)} 
+                >
+                  <option value="未入金">未入金</option>
+                  <option value="着金確認中">着金確認中</option>
+                  <option value="入金確認・着金完了">入金確認・着金完了</option>
+                  <option value="過不足・調整中">過不足・要調整</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">着金確認日</label>
+                <input 
+                  type="date" 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                  value={confirmedDate} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'confirmedDate', e.target.value)} 
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-slate-500 mb-1">振込先案内口座</label>
+                <CompositionTextarea 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs font-mono" 
+                  rows={2}
+                  value={accountInfo} 
+                  onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'accountInfo', val)} 
+                />
+              </div>
+            </div>
+
+            {/* Action buttons with Save feedback */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-2">
+              <span className="text-[10px] text-slate-400 font-medium font-sans">
+                ※ 入力内容は自動的・リアルタイムに保存されます。
+              </span>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSaveFeedback('t5-3');
+                    setTimeout(() => setSaveFeedback(''), 2000);
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold transition-all rounded text-xs select-none shadow-sm flex items-center justify-center cursor-pointer min-w-[90px] h-[34px]"
+                >
+                  {saveFeedback === 't5-3' ? (
+                    <span className="text-emerald-600 flex items-center space-x-1 animate-pulse">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>保存完了</span>
+                    </span>
+                  ) : (
+                    <span>保存する</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleTask(phase.id, task.id);
+                  }}
+                  className="px-5 py-2 bg-prestige-gold hover:bg-prestige-gold/90 text-white font-bold transition-all rounded text-xs cursor-pointer shadow-sm flex items-center space-x-1.5 h-[34px]"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>完成入力・アーカイブ</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+
+
+    if (task.id === 't5-3') {
+      const approved = getApprovedProperty();
+      if (!approved) {
+        return (
+          <div className="mt-3 space-y-4 text-xs text-slate-500">
+            <p>{task.description}</p>
+            <p className="text-amber-600 bg-amber-50 p-2.5 border border-amber-200 rounded font-medium">
+              ※ 審査通過した物件が現在登録されていないため、契約金入金の管理を行えません。
+            </p>
+          </div>
+        );
+      }
+
+      // Lookup grand total from t5-1 if available
+      const p5 = selectedChecklist.phases.find((p: Phase) => p.id === 'phase-5');
+      const t5_1 = p5?.tasks.find((t: Task) => t.id === 't5-1');
+      const estimatedTotal = t5_1?.data?.totalAdjusted || '';
+
+      const tData = task.data || {};
+      const billAmount = tData.billAmount !== undefined ? tData.billAmount : estimatedTotal;
+      const payDeadline = tData.payDeadline || '';
+      const paymentStatus = tData.paymentStatus || '未入金';
+      const confirmedDate = tData.confirmedDate || '';
+      const accountInfo = tData.accountInfo || '北洋銀行 札幌駅前支店 普通 1234567\nカ）アンビシャス 営業口';
+
+      return (
+        <div className="mt-3 space-y-4 font-sans text-xs" onClick={e => e.stopPropagation()}>
+          <p className="sm:text-sm text-slate-500 leading-relaxed">{task.description}</p>
+          
+          <div className="bg-slate-50 p-4 border border-slate-200 rounded-lg space-y-3">
+            <h5 className="text-xs font-bold text-slate-800 border-b pb-2 flex items-center space-x-1.5">
+              <KeyRound className="w-4 h-4 text-prestige-gold" />
+              <span>初期費用・契約金の決済確認（契約物件：{approved.propertyName}）</span>
+            </h5>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-500 mb-1">請求金額 (税込)</label>
+                <div className="flex gap-2">
+                  <CompositionInput 
+                    type="text" 
+                    className="flex-1 border border-slate-300 p-2 rounded bg-white text-xs font-bold" 
+                    value={billAmount} 
+                    onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'billAmount', val)} 
+                  />
+                  {estimatedTotal && estimatedTotal !== billAmount && (
+                    <button 
+                      onClick={() => handleUpdateTaskField(phase.id, task.id, 'billAmount', estimatedTotal)}
+                      className="px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors text-[10px]"
+                      title="費用明細で設定した調整済金額をコピーします"
+                    >
+                      明細から同期
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">振込入金期日</label>
+                <input 
+                  type="date" 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                  value={payDeadline} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'payDeadline', e.target.value)} 
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">入金ステータス</label>
+                <select 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs outline-none"
+                  value={paymentStatus} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'paymentStatus', e.target.value)} 
+                >
+                  <option value="未入金">未入金</option>
+                  <option value="着金確認中">着金確認中</option>
+                  <option value="入金確認・着金完了">入金確認・着金完了</option>
+                  <option value="過不足・調整中">過不足・要調整</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1">着金確認日</label>
+                <input 
+                  type="date" 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs" 
+                  value={confirmedDate} 
+                  onChange={(e) => handleUpdateTaskField(phase.id, task.id, 'confirmedDate', e.target.value)} 
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-slate-500 mb-1">振込先案内口座</label>
+                <CompositionTextarea 
+                  className="w-full border border-slate-300 p-2 rounded bg-white text-xs font-mono" 
+                  rows={2}
+                  value={accountInfo} 
+                  onChange={(val) => handleUpdateTaskField(phase.id, task.id, 'accountInfo', val)} 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <p className={`text-xs sm:text-sm transition-colors ${task.completed ? 'text-slate-400' : 'text-slate-500'}`}>
+        {task.description}
+      </p>
+    );
   };
 
   const handleAddApplication = (phaseId: string, taskId: string) => {
@@ -719,12 +1955,17 @@ export default function App() {
     const task = phase?.tasks.find((t: Task) => t.id === taskId);
     if (!task) return;
     const applications = task.data?.applications || [];
+    
+    const finalProp = getAvailableProperties().find(p => p.isFinalSelected);
+    const defaultName = finalProp ? finalProp.name : '';
+    const defaultRoom = finalProp ? finalProp.room : '';
+
     handleTaskDataChange(phaseId, taskId, {
       ...task.data,
       applications: [...applications, { 
         id: Date.now().toString(), 
-        propertyName: '', 
-        roomNumber: '', 
+        propertyName: defaultName, 
+        roomNumber: defaultRoom, 
         applicationMethod: '', 
         documents: [],
         screeningStatus: '審査中',
@@ -739,8 +1980,40 @@ export default function App() {
     const task = phase?.tasks.find((t: Task) => t.id === taskId);
     if (!task || !task.data || !task.data.applications) return;
 
+    let shouldCompleteTask = false;
+    const newApps = task.data.applications.map((a: any) => {
+      if (a.id === appId) {
+        const updated = { ...a, [field]: value };
+        if (field === 'screeningStatus') {
+          if (value === '審査通過' || value === '審査落ち(アーカイブ)') {
+            updated.isArchived = true;
+          }
+          if (value === '審査通過' && !task.completed) {
+            shouldCompleteTask = true;
+          }
+        }
+        return updated;
+      }
+      return a;
+    });
+    
+    handleTaskDataChange(phaseId, taskId, { ...task.data, applications: newApps });
+
+    if (shouldCompleteTask) {
+      setTimeout(() => {
+        toggleTask(phaseId, taskId);
+      }, 100);
+    }
+  };
+
+  const handleUpdateApplicationMultiple = (phaseId: string, taskId: string, appId: string, updates: Record<string, any>) => {
+    if (!selectedChecklist) return;
+    const phase = selectedChecklist.phases.find((p: Phase) => p.id === phaseId);
+    const task = phase?.tasks.find((t: Task) => t.id === taskId);
+    if (!task || !task.data || !task.data.applications) return;
+
     const newApps = task.data.applications.map((a: any) => 
-      a.id === appId ? { ...a, [field]: value } : a
+      a.id === appId ? { ...a, ...updates } : a
     );
     
     handleTaskDataChange(phaseId, taskId, { ...task.data, applications: newApps });
@@ -758,18 +2031,41 @@ export default function App() {
 
   const toggleTask = (phaseId: string, taskId: string) => {
     if (!selectedChecklist) return;
+    let isNowCompleted = false;
     const newPhases = selectedChecklist.phases.map((phase: Phase) => {
       if (phase.id === phaseId) {
         return {
           ...phase,
-          tasks: phase.tasks.map(task => 
-            task.id === taskId ? { ...task, completed: !task.completed } : task
-          )
+          tasks: phase.tasks.map(task => {
+            if (task.id === taskId) {
+              isNowCompleted = !task.completed;
+              return { ...task, completed: isNowCompleted };
+            }
+            return task;
+          })
         };
       }
       return phase;
     });
     updatePhases(selectedChecklist.id, newPhases);
+
+    if (taskId === 't5-2' && isNowCompleted) {
+      const activePhase = selectedChecklist.phases.find((p: Phase) => p.id === phaseId);
+      const activeTask = activePhase?.tasks.find((t: Task) => t.id === taskId);
+      const brokerName = activeTask?.data?.brokerName || '';
+      if (brokerName.trim()) {
+        (async () => {
+          try {
+            await updateDoc(doc(db, 'checklists', selectedChecklist.id), {
+              status: 'archived',
+              updatedAt: serverTimestamp()
+            });
+          } catch (e) {
+            console.error("Auto archive failed:", e);
+          }
+        })();
+      }
+    }
   };
 
   const handleFactorChange = (phaseId: string, factorId: string, newValue: any) => {
@@ -800,6 +2096,324 @@ export default function App() {
     });
   };
 
+  const defaultExpenseItems = [
+    { label: '敷金', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '礼金', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '(日割)家賃', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '管理費', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '町内会費', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: 'シリンダー交換料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+    { label: '24時間管理費', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+    { label: '室内清掃料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+    { label: '初回保証委託料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '火災保険料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+    { label: '仲介手数料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true }
+  ];
+
+  const handleUpdateExpenseField = (phaseId: string, taskId: string, field: string, value: any) => {
+    if (!selectedChecklist) return;
+    const phase = selectedChecklist.phases.find((p: any) => p.id === phaseId);
+    const task = phase?.tasks.find((t: any) => t.id === taskId);
+    if (!task) return;
+
+    const currentDetails = task.data?.expenseDetails || {
+      propertyName: '',
+      roomNumber: '',
+      location: '',
+      contractDate: '',
+      rent: '',
+      keyMoney: '',
+      managementFee: '',
+      deposit: '',
+      parkingFee: '',
+      renewalFee: '',
+      managementFee24: '',
+      townFee: '',
+      fireInsurance: '',
+      contractPeriodStart: '',
+      contractPeriodEnd: '',
+      paymentDeadline: '',
+      bankName: '北海道銀行(0116)',
+      depositType: '普通預金',
+      branchName: '琴似支店（155）',
+      accountNumber: '1503433',
+      accountName: 'ｶ)ｱﾝﾋﾞｼｬｽ',
+      otherRemarks1: '',
+      otherRemarks2: '',
+      publishDate: new Date().toISOString().split('T')[0],
+      items: defaultExpenseItems
+    };
+
+    const updatedDetails = {
+      ...currentDetails,
+      [field]: value
+    };
+
+    handleTaskDataChange(phaseId, taskId, {
+      ...task.data,
+      expenseDetails: updatedDetails
+    });
+  };
+
+  const handleUpdateExpenseItemField = (phaseId: string, taskId: string, index: number, field: string, value: any) => {
+    if (!selectedChecklist) return;
+    const phase = selectedChecklist.phases.find((p: any) => p.id === phaseId);
+    const task = phase?.tasks.find((t: any) => t.id === taskId);
+    if (!task) return;
+
+    const currentDetails = task.data?.expenseDetails || {
+      propertyName: '',
+      roomNumber: '',
+      location: '',
+      contractDate: '',
+      rent: '',
+      keyMoney: '',
+      managementFee: '',
+      deposit: '',
+      parkingFee: '',
+      renewalFee: '',
+      managementFee24: '',
+      townFee: '',
+      fireInsurance: '',
+      contractPeriodStart: '',
+      contractPeriodEnd: '',
+      paymentDeadline: '',
+      bankName: '北海道銀行(0116)',
+      depositType: '普通預金',
+      branchName: '琴似支店（155）',
+      accountNumber: '1503433',
+      accountName: 'ｶ)ｱﾝビシャス',
+      otherRemarks1: '',
+      otherRemarks2: '',
+      publishDate: new Date().toISOString().split('T')[0],
+      items: defaultExpenseItems
+    };
+
+    const currentItems = [...(currentDetails.items || defaultExpenseItems)];
+    const currentItem = { ...currentItems[index] };
+
+    if (field === 'baseAmount' || field === 'isTaxable') {
+      const baseAmt = field === 'baseAmount' ? value : currentItem.baseAmount;
+      const isTax = field === 'isTaxable' ? value : currentItem.isTaxable;
+      const isTaxBool = (isTax === true || isTax === 'true');
+      const baseNum = parseFloat(String(baseAmt).replace(/,/g, '')) || 0;
+
+      currentItem.baseAmount = baseAmt;
+      currentItem.isTaxable = isTaxBool;
+      currentItem.tax = isTaxBool ? Math.round(baseNum * 0.1) : 0;
+      currentItem.total = baseNum + (isTaxBool ? Math.round(baseNum * 0.1) : 0);
+    } else if (field === 'tax') {
+      const baseNum = parseFloat(String(currentItem.baseAmount).replace(/,/g, '')) || 0;
+      const taxNum = parseFloat(String(value).replace(/,/g, '')) || 0;
+      currentItem.tax = value;
+      currentItem.total = baseNum + taxNum;
+    } else if (field === 'total') {
+      currentItem.total = value;
+    } else {
+      currentItem[field] = value;
+    }
+
+    currentItems[index] = currentItem;
+
+    handleTaskDataChange(phaseId, taskId, {
+      ...task.data,
+      expenseDetails: {
+        ...currentDetails,
+        items: currentItems
+      }
+    });
+  };
+
+  const handleImportPropertyToExpense = (phaseId: string, taskId: string, propName: string, roomNum: string) => {
+    if (!selectedChecklist) return;
+
+    let matchedProp: any = null;
+
+    const p2 = selectedChecklist.phases.find((p: any) => p.id === 'phase-2');
+    const t2_2 = p2?.tasks.find((t: any) => t.id === 't2-2');
+    if (t2_2?.data?.properties) {
+      matchedProp = t2_2.data.properties.find((p: any) => p.apartmentName === propName && p.roomNumber === roomNum);
+    }
+
+    if (!matchedProp) {
+      const p3 = selectedChecklist.phases.find((p: any) => p.id === 'phase-3');
+      const t3_1 = p3?.tasks.find((t: any) => t.id === 't3-1');
+      if (t3_1?.data?.viewings) {
+        matchedProp = t3_1.data.viewings.find((v: any) => v.propertyName === propName && v.roomNumber === roomNum);
+      }
+    }
+
+    if (matchedProp) {
+      const rentVal = matchedProp.monthlyRent || matchedProp.rent || '';
+      const depositVal = matchedProp.securityDeposit || '';
+      const keyMoneyVal = matchedProp.keyMoney || '';
+      const managementFeeVal = matchedProp.managementFee || '';
+      const parkingFeeVal = matchedProp.parkingFee || '';
+      const locationVal = matchedProp.location || '';
+
+      const baseRentNum = String(rentVal).replace(/[^0-9]/g, '') || '';
+      const baseDepositNum = String(depositVal).replace(/[^0-9]/g, '') || '';
+      const baseKeyMoneyNum = String(keyMoneyVal).replace(/[^0-9]/g, '') || '';
+      const baseFeeNum = String(managementFeeVal).replace(/[^0-9]/g, '') || '';
+
+      const defaultItems = [
+        { label: '敷金', baseAmount: baseDepositNum, tax: 0, total: baseDepositNum ? Number(baseDepositNum) : 0, remarks: '', isTaxable: false },
+        { label: '礼金', baseAmount: baseKeyMoneyNum, tax: 0, total: baseKeyMoneyNum ? Number(baseKeyMoneyNum) : 0, remarks: '', isTaxable: false },
+        { label: '(日割)家賃', baseAmount: baseRentNum, tax: 0, total: baseRentNum ? Number(baseRentNum) : 0, remarks: '※日割調整前', isTaxable: false },
+        { label: '管理費', baseAmount: baseFeeNum, tax: 0, total: baseFeeNum ? Number(baseFeeNum) : 0, remarks: '', isTaxable: false },
+        { label: '町内会費', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+        { label: 'シリンダー交換料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+        { label: '24時間管理費', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+        { label: '室内清掃料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: true },
+        { label: '初回保証委託料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+        { label: '火災保険料', baseAmount: '', tax: '', total: '', remarks: '', isTaxable: false },
+        { label: '仲介手数料', baseAmount: baseRentNum, tax: baseRentNum ? Math.round(Number(baseRentNum) * 0.1) : 0, total: baseRentNum ? Math.round(Number(baseRentNum) * 1.1) : 0, remarks: '', isTaxable: true }
+      ];
+
+      const currentDetails = {
+        propertyName: propName,
+        roomNumber: roomNum,
+        location: locationVal,
+        rent: rentVal,
+        keyMoney: keyMoneyVal,
+        managementFee: managementFeeVal,
+        deposit: depositVal,
+        parkingFee: parkingFeeVal,
+        renewalFee: '',
+        managementFee24: '',
+        townFee: '',
+        fireInsurance: '',
+        contractPeriodStart: '',
+        contractPeriodEnd: '',
+        paymentDeadline: '',
+        bankName: '北海道銀行(0116)',
+        depositType: '普通預金',
+        branchName: '琴似支店（155）',
+        accountNumber: '1503433',
+        accountName: 'ｶ)ｱﾝﾋﾞｼｬｽ',
+        otherRemarks1: '',
+        otherRemarks2: '',
+        publishDate: new Date().toISOString().split('T')[0],
+        items: defaultItems
+      };
+
+      const task = selectedChecklist.phases.find((p: any) => p.id === phaseId)?.tasks.find((t: any) => t.id === taskId);
+
+      handleTaskDataChange(phaseId, taskId, {
+        ...(task?.data || {}),
+        expenseDetails: currentDetails
+      });
+
+      showAlert('インポート成功', `✅ 物件「${propName} ${roomNum}号室」の情報をインポートし、金額計算を自動設定しました！`);
+    } else {
+      showAlert('エラー', `❌ 物件情報を特定できませんでした。`);
+    }
+  };
+
+  const handleDownloadExpenseExcel = (phaseId: string, taskId: string, empty: boolean = false) => {
+    if (!selectedChecklist) return;
+    const task = selectedChecklist.phases.find((p: any) => p.id === phaseId)?.tasks.find((t: any) => t.id === taskId);
+    if (!task) return;
+
+    const currentDetails = task.data?.expenseDetails || {
+      propertyName: '',
+      roomNumber: '',
+      location: '',
+      contractDate: '',
+      rent: '',
+      keyMoney: '',
+      managementFee: '',
+      deposit: '',
+      parkingFee: '',
+      renewalFee: '',
+      managementFee24: '',
+      townFee: '',
+      fireInsurance: '',
+      contractPeriodStart: '',
+      contractPeriodEnd: '',
+      paymentDeadline: '',
+      bankName: '北海道銀行(0116)',
+      depositType: '普通預金',
+      branchName: '琴似支店（155）',
+      accountNumber: '1503433',
+      accountName: 'ｶ)ｱﾝビシャス',
+      otherRemarks1: '',
+      otherRemarks2: '',
+      publishDate: new Date().toISOString().split('T')[0],
+      items: defaultExpenseItems
+    };
+
+    const currentItems = currentDetails.items || defaultExpenseItems;
+    const dataAOA: any[][] = [
+      ["", "", "", "", "", ""],
+      ["", "ー  費用明細書  ー", "", "", "", ""],
+      ["", "", "", "", "", `発行日 : ${currentDetails.publishDate || new Date().toISOString().split('T')[0]}`],
+      ["", "", "", "", "", ""],
+      ["物件名", currentDetails.propertyName || "", "", "部屋番号", currentDetails.roomNumber || "", "号室"],
+      ["所在地", currentDetails.location || "", "", "", "契約開始日", currentDetails.contractDate || ""],
+      ["", "", "", "", "", ""],
+      ["賃料", currentDetails.rent || "", "", "礼金", currentDetails.keyMoney || ""],
+      ["管理費", currentDetails.managementFee || "", "", "敷金", currentDetails.deposit || ""],
+      ["駐車料", currentDetails.parkingFee || "", "", "更新料", currentDetails.renewalFee || ""],
+      ["24時間管理費", currentDetails.managementFee24 || "", "", "町内会費", currentDetails.townFee || ""],
+      ["火災保険料", currentDetails.fireInsurance || "", "", "", ""],
+      ["契約期間", `${currentDetails.contractPeriodStart || "  年  月  日"} から ${currentDetails.contractPeriodEnd || "  年  月  日"} まで`, "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["項目", "本体金額", "消費税(10%)", "合計金額", "備考", ""],
+    ];
+
+    const custName = selectedChecklist.customerName || "";
+    dataAOA[3][0] = empty ? "                      様" : `${custName}  様`;
+
+    let tableTotal = 0;
+    currentItems.forEach((it: any) => {
+      const label = it.label;
+      const baseVal = empty ? "" : (parseFloat(String(it.baseAmount).replace(/,/g, '')) || 0);
+      const taxVal = empty ? "" : (parseFloat(String(it.tax).replace(/,/g, '')) || 0);
+      const totalVal = empty ? "" : (parseFloat(String(it.total).replace(/,/g, '')) || 0);
+
+      if (!empty && typeof totalVal === "number") tableTotal += totalVal;
+
+      dataAOA.push([
+        label,
+        baseVal !== "" ? `${baseVal.toLocaleString()} 円` : "",
+        taxVal !== "" ? `${taxVal.toLocaleString()} 円` : "",
+        totalVal !== "" ? `${totalVal.toLocaleString()} 円` : "",
+        empty ? "" : (it.remarks || "")
+      ]);
+    });
+
+    dataAOA.push(
+      ["", "", "", "", ""],
+      ["契約金合計", "", "", empty ? "- 円" : `${tableTotal.toLocaleString()} 円`, ""],
+      ["入金期限日", empty ? "           迄にお支払いをお願い致します。" : `${currentDetails.paymentDeadline || ""} 迄にお支払いをお願い致します。`, "", "", ""],
+      ["", "", "", "", ""],
+      ["<  契約金振込口座  >", "", "", "", ""],
+      ["銀行名", currentDetails.bankName || "北海道銀行(0116)", "預金種別", currentDetails.depositType || "普通預金", ""],
+      ["支店名", currentDetails.branchName || "琴似支店（155）", "口座番号", currentDetails.accountNumber || "1503433", ""],
+      ["口座名義", currentDetails.accountName || "ｶ)ｱﾝビシャス", "", "", ""],
+      ["※ 振込手数料はお客様負担となります。", "", "", "", ""],
+      ["", "", "", "", ""],
+      ["<  その他備考  >", "", "", "", ""],
+      [`(1) ${empty ? "" : (currentDetails.otherRemarks1 || "")}`, "", "", "", ""],
+      [`(2) ${empty ? "" : (currentDetails.otherRemarks2 || "")}`, "", "", "", ""]
+    );
+
+    const worksheet = XLSX.utils.aoa_to_sheet(dataAOA);
+    worksheet['!cols'] = [
+      { wch: 22 }, // Col A
+      { wch: 15 }, // Col B
+      { wch: 15 }, // Col C
+      { wch: 18 }, // Col D
+      { wch: 40 }, // Col E
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const filePrefix = empty ? "費用明細_空白テンプレート" : `${custName}様_費用明細書`;
+    XLSX.utils.book_append_sheet(workbook, worksheet, "費用明細書");
+    XLSX.writeFile(workbook, `${filePrefix}.xlsx`);
+  };
+
   const generateExcelWorkbook = () => {
     if (!selectedChecklist) return null;
     
@@ -825,6 +2439,10 @@ export default function App() {
         phase.factors.forEach(factor => {
           let valStr = factor.value;
           if (Array.isArray(factor.value)) valStr = factor.value.join(', ');
+          if (factor.type === 'address_group' && factor.value && typeof factor.value === 'object') {
+            const { region, zip, address, building } = factor.value;
+            valStr = `[${region}] ${zip ? '〒' + zip + ' ' : ''}${address || ''}${building ? ' ' + building : ''}`;
+          }
           factorData.push({
             '段階': phase.title,
             '設定項目': factor.title,
@@ -863,6 +2481,10 @@ export default function App() {
     phase1.factors.forEach((factor: Factor) => {
       let valStr = factor.value;
       if (Array.isArray(factor.value)) valStr = factor.value.join('、 ');
+      if (factor.type === 'address_group' && factor.value && typeof factor.value === 'object') {
+        const { region, zip, address, building } = factor.value;
+        valStr = `[${region}] ${zip ? '〒' + zip + ' ' : ''}${address || ''}${building ? ' ' + building : ''}`;
+      }
       data.push({
         '項目': factor.title,
         '内容': valStr || ''
@@ -934,7 +2556,7 @@ export default function App() {
           <div className="w-20 h-20 bg-prestige-gold/10 text-prestige-gold rounded-full flex items-center justify-center mx-auto mb-8">
             <Users className="w-10 h-10" />
           </div>
-          <h1 className="text-3xl font-medium tracking-widest text-luxury-ink mb-3 uppercase font-display">AMBITIOUS CRM</h1>
+          <h1 className="text-3xl font-medium tracking-widest text-luxury-ink mb-3 uppercase font-display">AMBITIOUS 業務管理</h1>
           <p className="text-luxury-sage font-medium italic mb-10">賃貸業務管理システム</p>
           <button
             onClick={signInWithGoogle}
@@ -1022,7 +2644,7 @@ export default function App() {
               <div className="bg-luxury-ink p-2 rounded-sm text-prestige-gold">
                 <ClipboardList className="w-6 h-6" />
               </div>
-              <h1 className="font-display font-semibold tracking-wider text-luxury-ink uppercase text-sm">Ambitious CRM</h1>
+              <h1 className="font-display font-semibold tracking-wider text-luxury-ink uppercase text-sm">Ambitious 業務管理</h1>
             </div>
             <button 
               className="md:hidden p-1 text-luxury-sage hover:bg-luxury-paper rounded"
@@ -1153,15 +2775,15 @@ export default function App() {
       <main className="flex-1 flex flex-col h-screen overflow-y-auto relative">
         {selectedChecklist ? (
           <>
-            <header className="bg-white/80 backdrop-blur-md border-b border-luxury-border sticky top-0 z-20 px-8 py-8 sm:py-10">
-              <div className="flex flex-col gap-8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-6 min-w-0">
+            <header className="bg-white/80 backdrop-blur-md border-b border-luxury-border sticky top-0 z-20 px-4 sm:px-8 py-4 sm:py-10">
+              <div className="flex flex-col gap-4 sm:gap-8">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 sm:gap-6 min-w-0">
                     <button 
                       onClick={() => setIsSidebarOpen(true)}
-                      className="md:hidden p-2 -ml-2 text-luxury-sage hover:bg-luxury-paper rounded-none"
+                      className="md:hidden p-1.5 -ml-1 text-luxury-sage hover:bg-luxury-paper rounded-none"
                     >
-                      <Menu className="w-6 h-6" />
+                      <Menu className="w-5 h-5" />
                     </button>
                     <button 
                       onClick={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
@@ -1170,10 +2792,72 @@ export default function App() {
                       <Menu className="w-6 h-6" />
                     </button>
                     <div className="min-w-0">
-                      <h2 className="text-2xl sm:text-4xl font-normal font-serif text-luxury-ink tracking-tight truncate">{selectedChecklist.customerName} 様</h2>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="w-2 h-2 bg-prestige-gold rounded-full" />
-                        <p className="text-xs font-display font-bold tracking-[0.2em] text-luxury-sage uppercase">同期済み</p>
+                      {isEditingName ? (
+                        <form 
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSaveCustomerName(selectedChecklist.id, editingNameVal);
+                          }}
+                          className="flex items-center gap-1 sm:gap-2 max-w-full"
+                        >
+                          <input
+                            type="text"
+                            value={editingNameVal}
+                            onChange={(e) => setEditingNameVal(e.target.value)}
+                            className="text-lg sm:text-3xl font-normal font-serif text-luxury-ink border-b border-prestige-gold focus:outline-none focus:border-luxury-ink bg-transparent py-0 px-0 min-w-[100px] w-36 sm:w-64 tracking-tight"
+                            placeholder="お客様名"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                setIsEditingName(false);
+                              }
+                            }}
+                          />
+                          <span className="text-lg sm:text-3xl font-serif text-luxury-ink whitespace-nowrap">様</span>
+                          <button
+                            type="submit"
+                            className="p-1 text-prestige-gold hover:bg-prestige-gold/10 rounded transition-colors flex-shrink-0"
+                            title="保存"
+                          >
+                            <Check className="w-4 h-4 sm:w-6 sm:h-6" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingName(false)}
+                            className="p-1 text-luxury-sage hover:bg-slate-100 rounded transition-colors flex-shrink-0"
+                            title="キャンセル"
+                          >
+                            <X className="w-4 h-4 sm:w-6 sm:h-6" />
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="flex items-center gap-2 group">
+                          <h2 
+                            onClick={() => {
+                              setEditingNameVal(selectedChecklist.customerName);
+                              setIsEditingName(true);
+                            }}
+                            className="text-xl sm:text-4xl font-normal font-serif text-luxury-ink tracking-tight truncate cursor-pointer hover:text-prestige-gold transition-colors flex-shrink-0"
+                            title="クリックして名前を変更"
+                          >
+                            {selectedChecklist.customerName} 様
+                          </h2>
+                          <button
+                            onClick={() => {
+                              setEditingNameVal(selectedChecklist.customerName);
+                              setIsEditingName(true);
+                            }}
+                            className="p-1 text-luxury-sage hover:text-prestige-gold transition-all"
+                            title="名前を変更"
+                          >
+                            <Pencil className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center gap-2 mt-1 sm:mt-2">
+                        <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-prestige-gold rounded-full" />
+                        <p className="text-[10px] sm:text-xs font-display font-bold tracking-[0.2em] text-luxury-sage uppercase">同期済み</p>
                       </div>
                     </div>
                   </div>
@@ -1196,6 +2880,21 @@ export default function App() {
                     >
                       <CloudUpload className="w-4 h-4 mr-2" />
                       <span className="hidden sm:inline">{isUploading ? '処理中...' : 'Dropbox保存'}</span>
+                    </button>
+
+                    <button 
+                      onClick={() => handleArchiveCustomer(selectedChecklist.id, selectedChecklist.customerName, selectedChecklist.status)}
+                      className={`flex items-center justify-center text-xs font-display font-medium tracking-widest uppercase border transition-all duration-500 px-4 py-2 hover:shadow-sm ${
+                        selectedChecklist.status === 'archived'
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 hover:bg-amber-500 hover:text-white'
+                          : 'bg-transparent border-luxury-border text-luxury-ink hover:bg-luxury-ink hover:text-white'
+                      }`}
+                      title={selectedChecklist.status === 'archived' ? "案件をアクティブに戻す（復元）" : "案件をアーカイブ保存（存档）"}
+                    >
+                      <Archive className="w-4 h-4 mr-2" />
+                      <span className="hidden sm:inline">
+                        {selectedChecklist.status === 'archived' ? '案件 復元' : '完了・存档'}
+                      </span>
                     </button>
 
                     <button 
@@ -1318,6 +3017,101 @@ export default function App() {
                         >
                           <div className="border-t border-slate-100 px-3 py-3 sm:px-4 sm:py-4 bg-slate-50/50">
                             
+                            {phase.id === 'phase-5' && (() => {
+                              const approved = getApprovedProperty();
+                              if (!approved) {
+                                return (
+                                  <div className="mb-8 p-5 bg-amber-50 rounded-xl border border-amber-200 shadow-sm animate-in fade-in duration-300">
+                                    <div className="flex items-start space-x-3.5">
+                                      <div className="bg-amber-100 p-2 rounded-lg text-amber-700 flex-shrink-0">
+                                        <AlertTriangle className="w-5 h-5" />
+                                      </div>
+                                      <div>
+                                        <h5 className="text-sm font-bold text-amber-800 tracking-wider">契約対象の物件が確定していません</h5>
+                                        <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                                          「4. 申込・審査」フェーズにて、審査に合格した物件のステータスを「審査通過」に設定してください。
+                                          審査通過した物件の情報が自動的に本フェーズの契約対象として連携されます。
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              const details = approved.details;
+                              return (
+                                <div className="mb-8 bg-gradient-to-br from-white to-slate-50/50 border border-prestige-gold/40 rounded-xl p-5 sm:p-6 shadow-sm overflow-hidden animate-in fade-in duration-500">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-4 mb-5 gap-3">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center space-x-2 flex-wrap gap-1.5">
+                                        <span className="text-[10px] uppercase font-display font-black tracking-widest bg-prestige-gold text-white px-2.5 py-0.5 rounded-sm">
+                                          契約対象確定物件
+                                        </span>
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold inline-flex items-center space-x-1 border border-emerald-200">
+                                          <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                          <span>審査通過済</span>
+                                        </span>
+                                      </div>
+                                      <h3 className="text-lg sm:text-2xl font-serif font-black text-luxury-ink tracking-tight">
+                                        {approved.propertyName} {approved.roomNumber ? ` ${approved.roomNumber}号室` : ''}
+                                      </h3>
+                                    </div>
+                                    {details && details.managementCompany && (
+                                      <div className="text-right sm:border-l sm:border-slate-200 sm:pl-4">
+                                        <span className="font-semibold block text-slate-400 text-[9px] uppercase tracking-wider">管理会社</span>
+                                        <span className="font-bold text-slate-800 text-sm">{details.managementCompany}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">物件基本条件</p>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-xl border border-slate-200/60 shadow-inner">
+                                    <div className="space-y-0.5">
+                                      <span className="text-slate-400 block text-[10px]">賃料（月額）</span>
+                                      <span className="text-sm font-bold text-slate-800">{details?.monthlyRent || '未設定'}</span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <span className="text-slate-400 block text-[10px]">管理費（月額）</span>
+                                      <span className="text-sm font-bold text-slate-800">{details?.managementFee || '未設定'}</span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <span className="text-slate-400 block text-[10px]">敷金</span>
+                                      <span className="text-sm font-bold text-slate-800">{details?.securityDeposit || '未設定'}</span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <span className="text-slate-400 block text-[10px]">礼金</span>
+                                      <span className="text-sm font-bold text-slate-800">{details?.keyMoney || '未設定'}</span>
+                                    </div>
+                                    {details?.guaranteeDeposit && (
+                                      <div className="space-y-0.5">
+                                        <span className="text-slate-400 block text-[10px]">保証金</span>
+                                        <span className="text-sm font-bold text-slate-800">{details.guaranteeDeposit}</span>
+                                      </div>
+                                    )}
+                                    {details?.parkingFee && (
+                                      <div className="space-y-0.5">
+                                        <span className="text-slate-400 block text-[10px]">駐車場代</span>
+                                        <span className="text-sm font-bold text-slate-800">{details.parkingFee}</span>
+                                      </div>
+                                    )}
+                                    {details?.neighborhoodFee && (
+                                      <div className="space-y-0.5">
+                                        <span className="text-slate-400 block text-[10px]">町内会費等</span>
+                                        <span className="text-sm font-bold text-slate-800">{details.neighborhoodFee}</span>
+                                      </div>
+                                    )}
+                                    {details && (details.managementCompanyTel || details.managementCompanyFax) && (
+                                      <div className="col-span-2 md:col-span-1 space-y-0.5">
+                                        <span className="text-slate-400 block text-[10px]">管理会社連絡先</span>
+                                        {details.managementCompanyTel && <span className="text-xs block font-mono text-slate-700">TEL: {details.managementCompanyTel}</span>}
+                                        {details.managementCompanyFax && <span className="text-xs block font-mono text-slate-700">FAX: {details.managementCompanyFax}</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {/* Tasks Section */}
                             <div className="mb-10 sm:mb-16">
                               <h4 className="text-xs sm:text-sm font-display font-black tracking-[0.3em] text-prestige-gold mb-6 flex items-center uppercase">
@@ -1353,7 +3147,7 @@ export default function App() {
                                       )}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <h5 className={`text-base sm:text-xl font-serif tracking-tight mb-2 transition-all duration-500 ${task.completed ? 'text-luxury-sage/40 font-medium italic' : 'text-luxury-ink font-normal'}`}>
+                                      <h5 className={`text-sm sm:text-xl font-serif tracking-tight mb-2 transition-all duration-500 ${task.completed ? 'text-luxury-sage/40 font-medium italic' : 'text-luxury-ink font-normal'}`}>
                                         {task.title}
                                       </h5>
                                       {task.id === 't2-2' ? (
@@ -1361,7 +3155,7 @@ export default function App() {
                                           {task.data?.properties?.map((property: any, index: number) => {
                                             const isArchived = property.isConfirmed;
                                             return (
-                                              <div key={property.id} className={`bg-white border rounded-lg shadow-sm relative group transition-all duration-500 ${isArchived ? 'border-slate-100 bg-slate-50/50 grayscale-[0.5]' : 'border-slate-200'}`}>
+                                              <div key={property.id} className={`bg-white border rounded-lg shadow-sm relative group transition-all duration-500 ${isArchived ? 'border-slate-100 bg-slate-50/50' : 'border-slate-200'}`}>
                                                 <button 
                                                   onClick={() => handleRemoveProperty(phase.id, task.id, property.id)}
                                                   className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -1369,14 +3163,129 @@ export default function App() {
                                                   <X className="w-4 h-4" />
                                                 </button>
                                                 
-                                                {isArchived && (
-                                                  <div className="absolute top-4 right-10 flex items-center space-x-1 px-3 py-1 bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold">
-                                                    <Archive className="w-3.5 h-3.5" />
-                                                    <span className="text-[10px] font-display font-bold tracking-widest uppercase">Archived</span>
-                                                  </div>
-                                                )}
+                                                {isArchived ? (
+                                                  <div className="p-6 space-y-4 bg-slate-50/50">
+                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 gap-2 mr-8 animate-in fade-in duration-300">
+                                                      <div>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                          <h6 className="text-[10px] font-display font-bold text-prestige-gold tracking-widest uppercase">物件プレビュー</h6>
+                                                          <div className="flex items-center space-x-1 px-2 py-0.5 bg-prestige-gold/10 border border-prestige-gold/20 text-prestige-gold">
+                                                            <Archive className="w-3.5 h-3.5" />
+                                                            <span className="text-[9px] font-display font-bold tracking-widest uppercase">確定済み</span>
+                                                          </div>
+                                                          {property.isFinalSelected && (
+                                                            <div className="flex items-center space-x-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 animate-pulse">
+                                                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                              <span className="text-[9px] font-display font-bold tracking-widest uppercase">★ 申込物件に決定</span>
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                        <h4 className="text-base sm:text-lg font-serif font-semibold text-luxury-ink tracking-tight mt-1">
+                                                          {property.apartmentName || '名称未入力'} {property.roomNumber ? ` ${property.roomNumber}号室` : ''}
+                                                        </h4>
+                                                      </div>
+                                                      <div className="flex items-center space-x-2">
+                                                        {property.isFinalSelected ? (
+                                                          <button
+                                                            onClick={() => handleUpdateProperty(phase.id, task.id, property.id, 'isFinalSelected', false)}
+                                                            className="px-3 py-1.5 bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700 transition-all text-xs font-display font-medium tracking-wider flex items-center space-x-1 cursor-pointer"
+                                                          >
+                                                            <Check className="w-3 h-3 text-white" />
+                                                            <span>申込選択中</span>
+                                                          </button>
+                                                        ) : (
+                                                          <button
+                                                            onClick={() => handleUpdateProperty(phase.id, task.id, property.id, 'isFinalSelected', true)}
+                                                            className="px-3 py-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 transition-all text-xs font-display font-medium tracking-wider cursor-pointer"
+                                                          >
+                                                            最終申込物件に決定
+                                                          </button>
+                                                        )}
+                                                        <button
+                                                          onClick={() => handleUpdateProperty(phase.id, task.id, property.id, 'isConfirmed', false)}
+                                                          className="px-4 py-1.5 border border-luxury-border text-luxury-sage hover:bg-luxury-ink hover:text-white transition-all text-xs font-display font-bold tracking-widest uppercase cursor-pointer"
+                                                        >
+                                                          編集する
+                                                        </button>
+                                                      </div>
+                                                    </div>
 
-                                                <div className={`p-6 space-y-6 ${isArchived ? 'pointer-events-none' : ''}`}>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-sm animate-in fade-in duration-300">
+                                                      {property.managementCompany && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">管理会社</span>
+                                                          <span className="font-medium text-luxury-ink">{property.managementCompany}</span>
+                                                        </div>
+                                                      )}
+                                                      {(property.monthlyRent || property.managementFee) && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">月額賃料 / 共益費</span>
+                                                          <span className="font-medium text-luxury-ink">
+                                                            {property.monthlyRent || '未設定'} / {property.managementFee || 'ー'}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {(property.securityDeposit || property.keyMoney || property.guaranteeDeposit) && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">敷金 / 礼金 / 保証金</span>
+                                                          <span className="font-medium text-luxury-ink">
+                                                            {property.securityDeposit || 'ー'} / {property.keyMoney || 'ー'} / {property.guaranteeDeposit || 'ー'}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {(property.parkingFee || property.neighborhoodFee) && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">駐車場 / 町内会費</span>
+                                                          <span className="font-medium text-luxury-ink">
+                                                            {property.parkingFee || 'なし'} / {property.neighborhoodFee || 'なし'}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {property.managementCompanyTel && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">管理会社 TEL</span>
+                                                          <span className="font-mono text-luxury-ink">{property.managementCompanyTel}</span>
+                                                        </div>
+                                                      )}
+                                                      {property.managementCompanyFax && (
+                                                        <div className="space-y-1">
+                                                          <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">管理会社 FAX</span>
+                                                          <span className="font-mono text-luxury-ink">{property.managementCompanyFax}</span>
+                                                        </div>
+                                                      )}
+                                                    </div>
+
+                                                    <div className="bg-white p-3 border border-slate-100 space-y-1 animate-in fade-in duration-300">
+                                                      <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase mb-1">条件・必要書類</span>
+                                                      <div className="flex flex-wrap gap-2">
+                                                        {property.foreignerAllowed && (
+                                                          <span className="text-[11px] font-display font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 uppercase tracking-wider">
+                                                            外国人入居可
+                                                          </span>
+                                                        )}
+                                                        {property.requiredDocs && property.requiredDocs.length > 0 ? (
+                                                          property.requiredDocs.map((doc: string) => (
+                                                            <span key={doc} className="text-[11px] font-display font-semibold text-luxury-ink bg-slate-100 border border-slate-200 px-2.5 py-0.5 uppercase tracking-wider">
+                                                              {doc}
+                                                            </span>
+                                                          ))
+                                                        ) : (
+                                                          !property.foreignerAllowed && (
+                                                            <span className="text-xs text-slate-400 italic">特に指定なし</span>
+                                                          )
+                                                        )}
+                                                      </div>
+                                                    </div>
+
+                                                    {property.notes && (
+                                                      <div className="bg-white p-3 border border-slate-100 space-y-1 animate-in fade-in duration-300">
+                                                        <span className="block text-[10px] font-display font-bold text-luxury-sage/65 tracking-widest uppercase">確認事項</span>
+                                                        <p className="text-xs text-luxury-sage whitespace-pre-wrap leading-relaxed">{property.notes}</p>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                ) : (
+                                                  <div className="p-6 space-y-6">
                                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                     <div>
                                                       <label className="block text-[10px] font-display font-bold text-luxury-sage tracking-widest uppercase mb-1">管理会社名</label>
@@ -1581,10 +3490,10 @@ export default function App() {
                                                     </div>
                                                   )}
                                                 </div>
+                                                )}
                                               </div>
                                             );
-                                          })}
-                                          
+                                          })}                                          
                                           <button 
                                             onClick={() => handleAddProperty(phase.id, task.id)}
                                             className="w-full py-6 border-2 border-dashed border-luxury-border text-luxury-sage rounded-none hover:border-prestige-gold hover:text-luxury-ink transition-all duration-500 flex items-center justify-center space-x-3 group"
@@ -1597,17 +3506,40 @@ export default function App() {
                                         <div className="mt-3 space-y-4" onClick={e => e.stopPropagation()}>
                                           <p className="text-sm text-slate-500 mb-2">{task.description}</p>
                                           {task.data?.viewings?.map((viewing: any) => (
-                                            <div key={viewing.id} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm relative group">
-                                              <button 
-                                                onClick={() => handleDeleteViewing(phase.id, task.id, viewing.id)}
-                                                className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                              >
-                                                <X className="w-4 h-4" />
-                                              </button>
+                                            <div key={viewing.id} className={`bg-white border rounded-lg p-4 shadow-sm relative group transition-all ${viewing.isArchived ? 'border-slate-200 bg-slate-50 opacity-75' : 'border-slate-200'}`}>
+                                              <div className="flex justify-between items-start mb-2">
+                                                <div 
+                                                  className="flex-1 cursor-pointer"
+                                                  onClick={() => {
+                                                    if (viewing.isArchived) handleUpdateViewing(phase.id, task.id, viewing.id, 'isArchived', false);
+                                                  }}
+                                                >
+                                                  <h4 className="font-semibold text-slate-800 flex items-center">
+                                                    {viewing.propertyName || '物件未設定'} {viewing.roomNumber}
+                                                    {viewing.isArchived && <span className="ml-2 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded tracking-wider uppercase">Archived</span>}
+                                                  </h4>
+                                                </div>
+                                                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <button
+                                                    onClick={() => handleUpdateViewing(phase.id, task.id, viewing.id, 'isArchived', !viewing.isArchived)}
+                                                    className={`p-1.5 rounded transition-colors ${viewing.isArchived ? 'text-prestige-gold bg-prestige-gold/10' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                                                    title={viewing.isArchived ? "展開" : "アーカイブ"}
+                                                  >
+                                                    <Archive className="w-4 h-4" />
+                                                  </button>
+                                                  <button 
+                                                    onClick={() => handleDeleteViewing(phase.id, task.id, viewing.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                  >
+                                                    <X className="w-4 h-4" />
+                                                  </button>
+                                                </div>
+                                              </div>
                                               
-                                              <div className="mb-4 bg-slate-50 p-3 rounded-md border border-slate-200">
+                                              {!viewing.isArchived && (
+                                                <div className="animate-in fade-in slide-in-from-top-1 duration-300">
                                                 <label className="block text-xs font-bold text-slate-700 mb-2">案内方法</label>
-                                                <div className="flex space-x-6">
+                                                  <div className="flex space-x-6">
                                                   <label className="flex items-center space-x-2 cursor-pointer">
                                                     <input 
                                                       type="radio" 
@@ -1631,23 +3563,21 @@ export default function App() {
                                                     <span className="text-sm text-slate-700 font-medium">オンライン案内</span>
                                                   </label>
                                                 </div>
-                                              </div>
 
                                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                                                 <div className="sm:col-span-2">
                                                   <label className="block text-xs font-medium text-slate-500 mb-1">物件選択</label>
                                                   <select
                                                     className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow bg-white"
-                                                    value={`${viewing.propertyName || ''}|${viewing.roomNumber || ''}`}
+                                                    value={`${viewing.propertyName || ''}|||${viewing.roomNumber || ''}`}
                                                     onChange={(e) => {
-                                                      const [name, room] = e.target.value.split('|');
-                                                      handleUpdateViewing(phase.id, task.id, viewing.id, 'propertyName', name);
-                                                      handleUpdateViewing(phase.id, task.id, viewing.id, 'roomNumber', room);
+                                                      const [name, room] = e.target.value.split('|||');
+                                                      handleUpdateViewingMultiple(phase.id, task.id, viewing.id, { propertyName: name, roomNumber: room });
                                                     }}
                                                   >
-                                                    <option value="|">物件を選択してください</option>
+                                                    <option value="|||">物件を選択してください</option>
                                                     {selectedChecklist?.phases.find((p: Phase) => p.id === 'phase-2')?.tasks.find((t: Task) => t.id === 't2-2')?.data?.properties?.map((prop: any) => (
-                                                      <option key={prop.id} value={`${prop.apartmentName}|${prop.roomNumber}`}>
+                                                      <option key={prop.id} value={`${prop.apartmentName}|||${prop.roomNumber}`}>
                                                         {prop.apartmentName} {prop.roomNumber}
                                                       </option>
                                                     ))}
@@ -1774,7 +3704,39 @@ export default function App() {
                                                 )}
                                               </div>
 
-                                              <div className="bg-amber-50 p-3 rounded-md border border-amber-100 space-y-3 mt-3">
+                                               <div className="bg-slate-50 p-3 rounded-md border border-slate-200 mt-3 space-y-3">
+                                                 <p className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                                                   <CheckSquare className="w-4 h-4 text-prestige-gold" />
+                                                   <span>現地チェック項目（物件個別）</span>
+                                                 </p>
+                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                   {['ゴミ置き場確認', '採光・防音確認', '携帯電波確認', '部屋の向き・日当たり', 'Wi-Fi状況', '水道・電気・ガスメーターの位置', '居室・寝室の照明', 'キッチンコンロ', '換気扇', '浴室追い焚き', '浴室乾燥機', 'エアコン', '暖房 (灯油)', '暖房 (ガス)', '暖房 (電化)', '給湯器'].map(item => {
+                                                     const checkedItems = viewing.checkItems || [];
+                                                     const isChecked = checkedItems.includes(item);
+                                                     return (
+                                                       <label key={item} className={`flex items-center space-x-1.5 text-xs px-2 py-1.5 rounded border cursor-pointer transition-colors ${isChecked ? 'bg-prestige-gold/10 border-prestige-gold/20 text-prestige-gold' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                                                         <input 
+                                                           type="checkbox" 
+                                                           className="hidden" 
+                                                           checked={isChecked} 
+                                                           onChange={(e) => {
+                                                             const next = e.target.checked 
+                                                               ? [...checkedItems, item] 
+                                                               : checkedItems.filter((c: string) => c !== item);
+                                                             handleUpdateViewing(phase.id, task.id, viewing.id, 'checkItems', next);
+                                                           }} 
+                                                         />
+                                                         <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-prestige-gold border-prestige-gold' : 'border-slate-300 bg-white'}`}>
+                                                           {isChecked && <Check className="w-2.5 h-2.5 text-white stroke-[3]" />}
+                                                         </div>
+                                                         <span className="truncate">{item}</span>
+                                                       </label>
+                                                     );
+                                                   })}
+                                                 </div>
+                                               </div>
+
+                                               <div className="bg-amber-50 p-3 rounded-md border border-amber-100 space-y-3 mt-3">
                                                 <p className="text-xs font-bold text-amber-800">内覧フィードバック</p>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                   <div>
@@ -1804,7 +3766,9 @@ export default function App() {
                                                 </div>
                                               </div>
                                             </div>
-                                          ))}
+                                            )}
+                                          </div>
+                                        ))}
                                           
                                           <button 
                                             onClick={() => handleAddViewing(phase.id, task.id)}
@@ -1818,38 +3782,74 @@ export default function App() {
                                         <div className="mt-3 space-y-4" onClick={e => e.stopPropagation()}>
                                           <p className="text-sm text-slate-500 mb-2">{task.description}</p>
                                           {task.data?.applications?.map((app: any) => {
-                                            const isArchived = app.screeningStatus === '審査落ち(アーカイブ)';
+                                            const isApproved = app.screeningStatus === '審査通過'; const isRejected = app.screeningStatus === '審査落ち(アーカイブ)'; const isArchived = app.isArchived !== false;
                                             return (
-                                            <div key={app.id} className={`bg-white border rounded-lg p-4 shadow-sm relative group transition-all ${isArchived ? 'border-slate-200 bg-slate-50 opacity-75' : 'border-slate-200'}`}>
-                                              <button 
-                                                onClick={() => handleDeleteApplication(phase.id, task.id, app.id)}
-                                                className="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                              >
-                                                <X className="w-4 h-4" />
-                                              </button>
-                                              
-                                              {isArchived && (
-                                                <div className="absolute top-2 right-10 bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded-md font-medium">
-                                                  アーカイブ済
+                                            <div key={app.id} className={`border rounded-lg p-4 shadow-sm relative group transition-all duration-300 ${isApproved ? (isArchived ? 'border-emerald-300 bg-emerald-50/40 text-emerald-900 shadow-sm shadow-emerald-100/30' : 'border-emerald-300 bg-emerald-50/10') : isRejected ? (isArchived ? 'border-rose-200 bg-rose-50/30 opacity-75 hover:opacity-100' : 'border-rose-200 bg-rose-50/10') : isArchived ? 'border-slate-200 bg-slate-50 opacity-75 hover:opacity-100' : 'border-slate-200 bg-white'}`}>
+                                              <div className="flex justify-between items-start mb-2">
+                                                <div 
+                                                  className="flex-1 cursor-pointer"
+                                                  onClick={() => {
+                                                    handleUpdateApplication(phase.id, task.id, app.id, 'isArchived', !isArchived);
+                                                  }}
+                                                >
+                                                  <h4 className="font-semibold text-slate-800 flex items-center flex-wrap gap-1.5">
+                                                    <span>{app.propertyName || '物件未設定'} {app.roomNumber}</span>
+                                                    {isApproved && (
+                                                      <span className="inline-flex items-center space-x-1 text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">
+                                                        <Check className="w-3 h-3 animate-pulse" />
+                                                        <span>審査通過</span>
+                                                      </span>
+                                                    )}
+                                                    {isRejected && (
+                                                      <span className="inline-flex items-center space-x-1 text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">
+                                                        <X className="w-3 h-3 animate-pulse" />
+                                                        <span>審査落ち</span>
+                                                      </span>
+                                                    )}
+                                                    {isArchived && !isApproved && !isRejected && (
+                                                      <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded tracking-wider uppercase font-bold">
+                                                        Archived
+                                                      </span>
+                                                    )}
+                                                  </h4>
                                                 </div>
-                                              )}
-
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                                                <div className="sm:col-span-2">
+                                                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <button
+                                                    onClick={() => handleUpdateApplication(phase.id, task.id, app.id, 'isArchived', !app.isArchived)}
+                                                    className={`p-1.5 rounded transition-colors ${app.isArchived ? 'text-prestige-gold bg-prestige-gold/10' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                                                    title={app.isArchived ? "展開" : "アーカイブ"}
+                                                  >
+                                                    <Archive className="w-4 h-4" />
+                                                  </button>
+                                                  <button 
+                                                    onClick={() => handleDeleteApplication(phase.id, task.id, app.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                  >
+                                                    <X className="w-4 h-4" />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                              
+                                              {!isArchived && (
+                                                <div className="animate-in fade-in slide-in-from-top-1 duration-300">
+                                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                                                    <div className="sm:col-span-2">
                                                   <label className="block text-xs font-medium text-slate-500 mb-1">物件選択 (過去の物件から自動入力)</label>
                                                   <select 
                                                     className="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-shadow bg-white mb-2"
+                                                    value={`${app.propertyName || ''}|||${app.roomNumber || ''}`}
                                                     onChange={(e) => {
                                                       if (e.target.value) {
                                                         const [name, room] = e.target.value.split('|||');
-                                                        handleUpdateApplication(phase.id, task.id, app.id, 'propertyName', name);
-                                                        handleUpdateApplication(phase.id, task.id, app.id, 'roomNumber', room);
+                                                        handleUpdateApplicationMultiple(phase.id, task.id, app.id, { propertyName: name, roomNumber: room });
                                                       }
                                                     }}
                                                   >
-                                                    <option value="">-- 物件を選択 --</option>
+                                                    <option value="|||">-- 物件を選択 --</option>
                                                     {getAvailableProperties().map((p, idx) => (
-                                                      <option key={idx} value={`${p.name}|||${p.room}`}>{p.name} {p.room}</option>
+                                                      <option key={idx} value={`${p.name}|||${p.room}`}>
+                                                        {p.isFinalSelected ? '★ [本命・申込物件] ' : ''}{p.name} {p.room}
+                                                      </option>
                                                     ))}
                                                   </select>
                                                 </div>
@@ -1949,7 +3949,9 @@ export default function App() {
                                                 </div>
                                               </div>
                                             </div>
-                                          )})}
+                                            )}
+                                          </div>
+                                        )})}
                                           
                                           <button 
                                             onClick={() => handleAddApplication(phase.id, task.id)}
@@ -1959,7 +3961,7 @@ export default function App() {
                                             <span>申込物件を追加</span>
                                           </button>
                                         </div>
-                                      ) : (
+                                      ) : (phase.id === 'phase-5' && ['t5-1', 't5-2', 't5-3'].includes(task.id)) ? renderTaskDetail(phase, task) : (
                                         <p className={`text-xs sm:text-sm transition-colors ${task.completed ? 'text-slate-400' : 'text-slate-500'}`}>
                                           {task.description}
                                         </p>
@@ -1971,14 +3973,14 @@ export default function App() {
                             </div>
 
                             {/* Factors Section */}
-                            {phase.factors && phase.factors.length > 0 && (
-                              <div className={`relative bg-white/50 p-8 sm:p-10 border border-luxury-border transition-all duration-700 ${phase.id === 'phase-1' && phase.tasks.find(t => t.id === 't1-1')?.completed ? 'bg-slate-50/80 saturate-[0.2]' : ''}`}>
+                            {phase.factors && phase.factors.length > 0 && phase.id !== 'phase-3' && (
+                              <div className={`relative bg-white/50 p-5 sm:p-10 border border-luxury-border transition-all duration-700 ${phase.id === 'phase-1' && phase.tasks.find(t => t.id === 't1-1')?.completed ? 'bg-slate-50/80 saturate-[0.2]' : ''}`}>
                                 {phase.id === 'phase-1' && (
                                   <div className="flex justify-between items-center mb-8">
                                     {phase.tasks.find(t => t.id === 't1-1')?.completed && (
                                       <div className="flex items-center space-x-2 text-luxury-sage bg-white px-3 py-1.5 border border-luxury-border shadow-sm animate-in fade-in slide-in-from-left-4 duration-500">
                                         <Archive className="w-4 h-4 text-prestige-gold" />
-                                        <span className="text-[10px] font-display font-bold tracking-[0.2em] uppercase">Hearing Archived</span>
+                                        <span className="text-[10px] font-display font-bold tracking-[0.2em] uppercase">ヒアリング完了</span>
                                       </div>
                                     )}
                                     <button
@@ -2057,8 +4059,8 @@ export default function App() {
                                     }
 
                                     return (
-                                      <div key={factor.id} className={`space-y-4 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''} ${isPhaseLocked ? 'pointer-events-none' : ''}`}>
-                                        <label className={`text-base sm:text-lg font-display font-black tracking-widest uppercase block underline underline-offset-4 transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 decoration-luxury-sage/20' : 'text-prestige-gold decoration-prestige-gold/30'}`}>{factor.title}</label>
+                                      <div key={factor.id} className={`space-y-3 sm:space-y-4 ${factor.type === 'textarea' || factor.type === 'checkbox_group' || factor.type === 'fee_timing_group' || factor.id.endsWith('-other') ? 'md:col-span-2' : ''} ${isPhaseLocked ? 'pointer-events-none' : ''}`}>
+                                        <label className={`text-sm sm:text-lg font-display font-black tracking-widest uppercase block underline underline-offset-4 transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 decoration-luxury-sage/20' : 'text-prestige-gold decoration-prestige-gold/30'}`}>{factor.title}</label>
                                         
                                         {(factor.type === 'text' || factor.type === 'textarea') && (
                                           <FactorInput factor={factor} phaseId={phase.id} handleFactorChange={handleFactorChange} disabled={isPhaseLocked} />
@@ -2069,7 +4071,7 @@ export default function App() {
                                           value={factor.value || ''} 
                                           onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
                                           disabled={isPhaseLocked}
-                                          className={`w-full text-base sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all placeholder:italic ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
+                                          className={`w-full text-sm sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all placeholder:italic ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
                                         >
                                           <option value="">選択してください</option>
                                           {factor.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -2077,11 +4079,11 @@ export default function App() {
                                       )}
                                       
                                       {factor.type === 'checkbox_group' && (
-                                        <div className="flex flex-wrap gap-4">
+                                        <div className="flex flex-wrap gap-2 sm:gap-4">
                                           {factor.options?.map(opt => {
                                             const isChecked = (factor.value as string[] || []).includes(opt);
                                             return (
-                                              <label key={opt} className={`flex items-center space-x-2 text-base font-display font-bold tracking-widest uppercase px-6 py-4 border transition-all duration-300 ${isPhaseLocked ? (isChecked ? 'bg-luxury-sage/30 border-luxury-sage/30 text-luxury-ink/50' : 'bg-transparent border-luxury-border/20 text-luxury-sage/20') : (isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md cursor-pointer' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white cursor-pointer')}`}>
+                                              <label key={opt} className={`flex items-center space-x-2 text-[10px] sm:text-base font-display font-bold tracking-widest uppercase px-4 py-2.5 sm:px-6 sm:py-4 border transition-all duration-300 ${isPhaseLocked ? (isChecked ? 'bg-luxury-sage/30 border-luxury-sage/30 text-luxury-ink/50' : 'bg-transparent border-luxury-border/20 text-luxury-sage/20') : (isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md cursor-pointer' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white cursor-pointer')}`}>
                                                 <input 
                                                   type="checkbox" 
                                                   className="hidden" 
@@ -2100,6 +4102,103 @@ export default function App() {
                                         </div>
                                       )}
 
+                                      {factor.type === 'address_group' && (
+                                        <div className="space-y-4">
+                                          <div className="flex space-x-4">
+                                            {['日本', '海外'].map((reg) => {
+                                              const addrValue = factor.value || { region: '日本', zip: '', address: '', building: '' };
+                                              const isChecked = addrValue.region === reg;
+                                              return (
+                                                <label key={reg} className={`flex-1 flex items-center justify-center space-x-2 text-[10px] sm:text-base font-display font-bold tracking-widest uppercase px-4 py-2.5 border transition-all duration-300 ${isPhaseLocked ? (isChecked ? 'bg-luxury-sage/30 border-luxury-sage/30 text-luxury-ink/50' : 'bg-transparent border-luxury-border/20 text-luxury-sage/20') : (isChecked ? 'bg-luxury-ink border-luxury-ink text-white shadow-md cursor-pointer' : 'bg-transparent border-luxury-border text-luxury-sage hover:border-prestige-gold hover:bg-white cursor-pointer')}`}>
+                                                  <input 
+                                                    type="radio" 
+                                                    className="hidden" 
+                                                    checked={isChecked} 
+                                                    disabled={isPhaseLocked}
+                                                    onChange={() => {
+                                                      handleFactorChange(phase.id, factor.id, { ...addrValue, region: reg });
+                                                    }} 
+                                                  />
+                                                  <span>{reg}</span>
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+
+                                          {(factor.value?.region === '日本' || !factor.value?.region) && (
+                                            <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-300">
+                                              <div className="flex items-center space-x-2">
+                                                <div className="relative flex-1">
+                                                  <input 
+                                                    type="text" 
+                                                    placeholder="郵便番号 (ハイフンなし可)" 
+                                                    value={factor.value?.zip || ''}
+                                                    disabled={isPhaseLocked}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value.replace(/[^0-9-]/g, '');
+                                                      handleFactorChange(phase.id, factor.id, { ...factor.value, zip: val });
+                                                    }}
+                                                    className={`w-full text-sm sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
+                                                  />
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  disabled={isPhaseLocked || !factor.value?.zip}
+                                                  onClick={async () => {
+                                                    const address = await searchAddressByZip(factor.value.zip);
+                                                    if (address) {
+                                                      handleFactorChange(phase.id, factor.id, { ...factor.value, address: address });
+                                                    } else {
+                                                      alert('住所が見つかりませんでした。');
+                                                    }
+                                                  }}
+                                                  className={`p-2 rounded-full transition-all ${isPhaseLocked || !factor.value?.zip ? 'text-luxury-sage/20 bg-luxury-sage/5' : 'text-prestige-gold bg-prestige-gold/5 hover:bg-prestige-gold/10'}`}
+                                                  title="郵便番号から住所を検索"
+                                                >
+                                                  <Search className="w-5 h-5" />
+                                                </button>
+                                              </div>
+                                              <div className="space-y-4">
+                                                <div>
+                                                  <label className="text-[10px] text-luxury-sage/50 uppercase tracking-widest block mb-1">市区町村・番地</label>
+                                                  <CompositionInput 
+                                                    type="text"
+                                                    placeholder="例: 札幌市中央区北1条西..."
+                                                    value={factor.value?.address || ''}
+                                                    disabled={isPhaseLocked}
+                                                    onChange={(val) => handleFactorChange(phase.id, factor.id, { ...factor.value, address: val })}
+                                                    className={`w-full text-base font-serif font-normal px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 ${isPhaseLocked ? 'opacity-60 grayscale' : ''}`}
+                                                  />
+                                                </div>
+                                                <div>
+                                                  <label className="text-[10px] text-luxury-sage/50 uppercase tracking-widest block mb-1">建物名・号室</label>
+                                                  <CompositionInput 
+                                                    type="text"
+                                                    placeholder="例: アンビシャスビル 101号室"
+                                                    value={factor.value?.building || ''}
+                                                    disabled={isPhaseLocked}
+                                                    onChange={(val) => handleFactorChange(phase.id, factor.id, { ...factor.value, building: val })}
+                                                    className={`w-full text-base font-serif font-normal px-0 py-2 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 ${isPhaseLocked ? 'opacity-60 grayscale' : ''}`}
+                                                  />
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {factor.value?.region === '海外' && (
+                                            <div className="animate-in fade-in slide-in-from-top-1 duration-300">
+                                              <CompositionTextarea 
+                                                placeholder="海外住所を入力してください"
+                                                value={factor.value?.address || ''}
+                                                disabled={isPhaseLocked}
+                                                onChange={(val) => handleFactorChange(phase.id, factor.id, { ...factor.value, address: val })}
+                                                className={`w-full text-base font-serif font-normal px-0 py-3 border-b border-luxury-border focus:border-prestige-gold bg-transparent outline-none transition-all placeholder:italic placeholder:text-luxury-sage/30 resize-y min-h-[80px] ${isPhaseLocked ? 'opacity-60 grayscale' : ''}`}
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
                                       {factor.type === 'date' && (
                                         <div className="flex items-center space-x-6">
                                           <input 
@@ -2107,10 +4206,10 @@ export default function App() {
                                             value={factor.value || ''} 
                                             disabled={isPhaseLocked}
                                             onChange={(e) => handleFactorChange(phase.id, factor.id, e.target.value)} 
-                                            className={`flex-1 text-base sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
+                                            className={`flex-1 text-sm sm:text-lg px-0 py-2 border-b bg-transparent outline-none transition-all ${isPhaseLocked ? 'border-luxury-border/30 text-luxury-sage/40 cursor-not-allowed' : 'border-luxury-border focus:border-prestige-gold text-luxury-ink'}`}
                                           />
                                           {factor.value && factor.id.includes('birth') && (
-                                            <span className={`text-base font-display font-bold tracking-widest uppercase px-4 py-2 border transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 bg-luxury-sage/5 border-luxury-sage/10' : 'text-prestige-gold bg-prestige-gold/5 border-prestige-gold/10'}`}>
+                                            <span className={`text-[10px] sm:text-base font-display font-bold tracking-widest uppercase px-2 py-1 sm:px-4 sm:py-2 border transition-colors ${isPhaseLocked ? 'text-luxury-sage/40 bg-luxury-sage/5 border-luxury-sage/10' : 'text-prestige-gold bg-prestige-gold/5 border-prestige-gold/10'}`}>
                                               {calculateAgeAndEra(factor.value)}
                                             </span>
                                           )}
@@ -2151,13 +4250,13 @@ export default function App() {
                                               const isMoveoutChecked = (factor.value as string[] || []).includes(moveoutOpt);
                                               
                                               return (
-                                                <div key={opt} className="flex items-center justify-between bg-slate-50 p-2.5 rounded-md border border-slate-200">
-                                                  <span className="text-sm font-medium text-slate-700">{opt}</span>
-                                                  <div className="flex items-center space-x-4">
-                                                    <label className="flex items-center space-x-1.5 cursor-pointer">
+                                                <div key={opt} className="flex items-center justify-between bg-slate-50 p-2 sm:p-2.5 rounded-md border border-slate-200">
+                                                  <span className="text-[10px] sm:text-sm font-medium text-slate-700 whitespace-nowrap mr-2">{opt}</span>
+                                                  <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+                                                    <label className="flex items-center space-x-1 cursor-pointer">
                                                       <input 
                                                         type="checkbox" 
-                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                        className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                                                         checked={isContractChecked}
                                                         onChange={(e) => {
                                                           const current = factor.value as string[] || [];
@@ -2165,12 +4264,12 @@ export default function App() {
                                                           handleFactorChange(phase.id, factor.id, next);
                                                         }}
                                                       />
-                                                      <span className="text-xs text-slate-600">契約時</span>
+                                                      <span className="text-[9px] sm:text-xs text-slate-600 whitespace-nowrap">契約時</span>
                                                     </label>
-                                                    <label className="flex items-center space-x-1.5 cursor-pointer">
+                                                    <label className="flex items-center space-x-1 cursor-pointer">
                                                       <input 
                                                         type="checkbox" 
-                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                        className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                                                         checked={isMoveoutChecked}
                                                         onChange={(e) => {
                                                           const current = factor.value as string[] || [];
@@ -2178,7 +4277,7 @@ export default function App() {
                                                           handleFactorChange(phase.id, factor.id, next);
                                                         }}
                                                       />
-                                                      <span className="text-xs text-slate-600">退去時</span>
+                                                      <span className="text-[9px] sm:text-xs text-slate-600 whitespace-nowrap">退去時</span>
                                                     </label>
                                                   </div>
                                                 </div>
@@ -2199,6 +4298,35 @@ export default function App() {
                   </div>
                 );
               })}
+
+              {allPhasesComplete && (
+                <div className="bg-luxury-paper border border-prestige-gold/30 p-8 sm:p-12 text-center rounded-none shadow-sm space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="w-16 h-16 bg-prestige-gold/10 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-8 h-8 text-prestige-gold" />
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-serif font-normal text-luxury-ink tracking-tight uppercase">全手続きが完了いたしました</h3>
+                  <p className="text-xs sm:text-sm font-display font-medium text-luxury-sage tracking-widest leading-relaxed max-w-xl mx-auto uppercase">
+                    すべてのお手続きと確認内容が正常に完了しました。<br />
+                    この案件を「成約済みの歴史アーカイブ（存档）」へ移動し、完了保存しますか？
+                  </p>
+                  
+                  <div className="pt-2 flex justify-center">
+                    {selectedChecklist.status !== 'archived' ? (
+                      <button
+                        onClick={() => handleArchiveCustomer(selectedChecklist.id, selectedChecklist.customerName, selectedChecklist.status)}
+                        className="px-8 py-3 bg-luxury-ink text-white text-xs font-display font-bold tracking-[0.2em] uppercase transition-all hover:bg-prestige-gold hover:shadow-lg shadow-prestige-gold/20 cursor-pointer"
+                      >
+                        成約アーカイブに保存 (存档)
+                      </button>
+                    ) : (
+                      <div className="flex items-center space-x-2 text-xs font-display font-bold tracking-wider text-prestige-gold bg-prestige-gold/5 border border-prestige-gold/20 px-6 py-3 uppercase">
+                        <Check className="w-4 h-4 text-prestige-gold mr-1" />
+                        <span>歴史アーカイブに完了保存（存档）済みです</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (

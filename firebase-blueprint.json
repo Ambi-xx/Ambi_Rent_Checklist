@@ -2,23 +2,44 @@
   "entities": {
     "Checklist": {
       "title": "Checklist",
-      "description": "Comprehensive lease lifecycle management data for a specific customer.",
+      "description": "Represents a customer checklist/project with multiple phases and tasks.",
       "type": "object",
       "properties": {
-        "customerName": { "type": "string", "description": "Name of the customer" },
-        "phasesData": { "type": "string", "description": "JSON stringified lifecycle phases and tasks" },
-        "status": { "type": "string", "enum": ["active", "archived"] },
-        "createdBy": { "type": "string", "description": "UID of the creator" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "customerName": {
+          "type": "string",
+          "description": "Name of the customer."
+        },
+        "phasesData": {
+          "type": "string",
+          "description": "JSON stringified array of Phase objects containing factors and tasks."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"],
+          "description": "Current status of the checklist."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "UID of the user who created this checklist."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
       },
       "required": ["customerName", "phasesData", "status", "createdBy", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
-    "/checklists/{checklistId}": {
+    "checklists/{checklistId}": {
       "schema": "Checklist",
-      "description": "Collection containing all customer lease checklists."
+      "description": "Collection of customer checklists."
     }
   }
 }

@@ -1,80 +1,67 @@
-// ===============================================================
-// Assumed Data Model
-// ===============================================================
-//
-// Collection: /checklists/{checklistId}
-// Document ID: auto-generated
-// Fields:
-//   - customerName: string (required, 1-100 chars)
-//   - phasesData: string (required, max 1MB) - JSON string of phases
-//   - status: string (required, ['active', 'archived'])
-//   - createdBy: string (required) - Auth UID
-//   - createdAt: timestamp (required) - Creation time
-//   - updatedAt: timestamp (required) - Last update time
-//
-// ===============================================================
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // Global Safety Net
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-
-    function isAuthenticated() {
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function incoming() {
+      return request.resource.data;
     }
 
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
 
     function isValidChecklist(data) {
-      return hasRequiredFields(['customerName', 'phasesData', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
-             hasOnlyAllowedFields(['customerName', 'phasesData', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
-             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 100 &&
-             data.phasesData is string && data.phasesData.size() <= 1048576 && // 1MB limit for safety
-             data.status in ['active', 'archived'] &&
-             data.createdBy is string &&
-             data.createdAt is timestamp &&
-             data.updatedAt is timestamp;
+      return data.keys().hasAll(['customerName', 'phasesData', 'status', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().size() == 6
+        && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 200
+        && data.phasesData is string && data.phasesData.size() <= 1000000 // 1MB total doc limit roughly
+        && data.status in ['active', 'archived']
+        && data.createdBy is string && data.createdBy == request.auth.uid
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    // -------------------------------------------------------------------------
+    // Collections
+    // -------------------------------------------------------------------------
 
     match /checklists/{checklistId} {
-      // Team Sharing: Any authenticated user can read and write to the team checklists
-      allow read: if isAuthenticated();
+      allow get: if isOwner(existing().createdBy);
+      allow list: if isSignedIn() && resource.data.createdBy == request.auth.uid;
       
-      allow create: if isAuthenticated() && 
-                    isValidChecklist(request.resource.data) &&
-                    request.resource.data.createdBy == request.auth.uid &&
-                    request.resource.data.createdAt == request.time &&
-                    request.resource.data.updatedAt == request.time;
-                    
-      allow update: if isAuthenticated() && 
-                    isValidChecklist(request.resource.data) &&
-                    request.resource.data.createdBy == resource.data.createdBy &&
-                    request.resource.data.createdAt == resource.data.createdAt &&
-                    request.resource.data.updatedAt == request.time;
-                    
-      allow delete: if isAuthenticated();
-    }
-
-    // Default deny for other paths
-    match /{document=**} {
-      allow read, write: if false;
+      allow create: if isSignedIn() 
+        && isValidChecklist(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isOwner(existing().createdBy)
+        && isValidChecklist(incoming())
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+        
+      allow delete: if isOwner(existing().createdBy);
     }
   }
 }
