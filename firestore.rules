@@ -27,19 +27,29 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isSameCompany(docData) {
+      return isSignedIn()
+        && 'email' in request.auth.token
+        && 'companyDomain' in docData
+        && docData.companyDomain != null
+        && docData.companyDomain != ""
+        && request.auth.token.email.matches('.*@' + docData.companyDomain);
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function isValidChecklist(data) {
       return data.keys().hasAll(['customerName', 'phasesData', 'status', 'createdBy', 'createdAt', 'updatedAt'])
-        && data.keys().size() == 6
+        && (data.keys().size() == 6 || (data.keys().size() == 7 && 'companyDomain' in data))
         && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 200
         && data.phasesData is string && data.phasesData.size() <= 1000000 // 1MB total doc limit roughly
         && data.status in ['active', 'archived']
-        && data.createdBy is string && data.createdBy == request.auth.uid
+        && data.createdBy is string
         && data.createdAt is timestamp
-        && data.updatedAt is timestamp;
+        && data.updatedAt is timestamp
+        && (!('companyDomain' in data) || data.companyDomain == null || (data.companyDomain is string && (data.companyDomain == "" || ('email' in request.auth.token && request.auth.token.email.matches('.*@' + data.companyDomain)))));
     }
 
     // -------------------------------------------------------------------------
@@ -47,21 +57,22 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
 
     match /checklists/{checklistId} {
-      allow get: if isOwner(existing().createdBy);
-      allow list: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow get: if isOwner(existing().createdBy) || isSameCompany(existing());
+      allow list: if isSignedIn() && (resource.data.createdBy == request.auth.uid || isSameCompany(resource.data));
       
       allow create: if isSignedIn() 
         && isValidChecklist(incoming())
+        && incoming().createdBy == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
         
-      allow update: if isOwner(existing().createdBy)
+      allow update: if (isOwner(existing().createdBy) || isSameCompany(existing()))
         && isValidChecklist(incoming())
         && incoming().createdBy == existing().createdBy
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
         
-      allow delete: if isOwner(existing().createdBy);
+      allow delete: if isOwner(existing().createdBy) || isSameCompany(existing());
     }
   }
 }

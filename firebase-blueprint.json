@@ -22,6 +22,10 @@
           "type": "string",
           "description": "UID of the user who created this checklist."
         },
+        "companyDomain": {
+          "type": "string",
+          "description": "Corporate or custom email domain associated with the creator, to support same-company data sharing (null for public domains)."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

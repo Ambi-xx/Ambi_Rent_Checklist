@@ -367,6 +367,22 @@ const FactorInput = ({ factor, phaseId, handleFactorChange, disabled }: { factor
 };
 
 export default function App() {
+  const getCompanyDomain = (email: string | null | undefined): string | null => {
+    if (!email) return null;
+    const parts = email.split('@');
+    if (parts.length < 2) return null;
+    const domain = parts[1].toLowerCase().trim();
+    const publicDomains = [
+      'gmail.com', 'yahoo.co.jp', 'yahoo.com', 'hotmail.com', 'hotmail.co.jp', 'live.jp',
+      'outlook.com', 'icloud.com', 'nifty.com', 'so-net.ne.jp', 'biglobe.ne.jp', 'ocn.ne.jp',
+      'aol.com', 'protonmail.com', 'proton.me', 'mail.com', 'zoho.com'
+    ];
+    if (publicDomains.includes(domain)) {
+      return null;
+    }
+    return domain;
+  };
+
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -453,11 +469,17 @@ export default function App() {
       return;
     }
 
-    const q = query(
-      collection(db, 'checklists'), 
-      where('createdBy', '==', user.uid),
-      orderBy('updatedAt', 'desc')
-    );
+    const companyDomain = getCompanyDomain(user.email);
+    const q = companyDomain
+      ? query(
+          collection(db, 'checklists'), 
+          where('companyDomain', '==', companyDomain)
+        )
+      : query(
+          collection(db, 'checklists'), 
+          where('createdBy', '==', user.uid)
+        );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -500,6 +522,22 @@ export default function App() {
           phases: phases
         };
       });
+
+      // Sort in memory by updatedAt desc (fail-safe database-index-free pattern)
+      list.sort((a: any, b: any) => {
+        const checkA = a.updatedAt;
+        const checkB = b.updatedAt;
+        const secondsA = checkA?.seconds || (checkA?.toMillis ? checkA.toMillis() / 1000 : 0);
+        const secondsB = checkB?.seconds || (checkB?.toMillis ? checkB.toMillis() / 1000 : 0);
+        const nanosecondsA = checkA?.nanoseconds || 0;
+        const nanosecondsB = checkB?.nanoseconds || 0;
+        
+        if (secondsB !== secondsA) {
+          return secondsB - secondsA;
+        }
+        return nanosecondsB - nanosecondsA;
+      });
+
       setChecklists(list);
       
       if (list.length > 0 && !selectedId) {
@@ -512,7 +550,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [isAuthReady, user]);
+  }, [isAuthReady, user, selectedId]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -551,12 +589,14 @@ export default function App() {
     if (!newCustomerName.trim() || !user) return;
 
     try {
+      const companyDomain = getCompanyDomain(user.email);
       const newRef = doc(collection(db, 'checklists'));
       await setDoc(newRef, {
         customerName: newCustomerName.trim(),
         phasesData: JSON.stringify(initialData),
         status: 'active',
         createdBy: user.uid,
+        companyDomain: companyDomain,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
